@@ -41,7 +41,7 @@ class Client(commands.Bot):
         conn = connect_db()
         cursor = conn.cursor()
 
-        SELECTION_STR = (f-'SELECT * from horse_information WHERE id = {user_id}')
+        SELECTION_STR = (f-'SELECT * from horse_information WHERE user_id = {user_id}')
         
         cursor.execute(SELECTION_STR)
         horse_data = cursor.fetchone()
@@ -56,7 +56,7 @@ class Client(commands.Bot):
             conn = connect_db()
             cursor = conn.cursor()
 
-            QUERY_STR = (f-'UPDATE horse_information SET {data_column}  = ? WHERE id = ?')
+            QUERY_STR = (f-'UPDATE horse_information SET {data_column}  = ? WHERE user_id = ?')
             
             cursor.execute(QUERY_STR, (updated_value, user_id))
             conn.commit
@@ -66,6 +66,43 @@ class Client(commands.Bot):
 
         except mysql.Error as e:
             print(f"An error has happened while attempting to update data: {e}")
+            return False
+
+    ### update all table values to reduce horse feed and water stats
+    async def daily_horse_update(self)
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            
+            #update hunger
+            cursor.execute("UPDATE horse_information SET hunger = hunger - 3")
+            conn.commit
+            cursor.execute("UPDATE horse_information SET hunger = 0 WHERE hunger < 0")
+            conn.commit
+
+            #update thirst
+            cursor.execute("UPDATE horse_information SET thirst = thirst - 5")
+            conn.commit
+            cursor.execute("UPDATE horse_information SET thirst = 0 WHERE thirst < 0")
+            conn.commit
+
+            #update cleanilness
+            cursor.execute("UPDATE horse_information SET clean = clean - 3")
+            conn.commit
+            cursor.execute("UPDATE horse_information SET clean = 0 WHERE clean < 0")
+            conn.commit
+
+            #update health
+            cursor.execute("UPDATE horse_information SET health = health - 2 WHERE hunger <= 5 AND thirst <= 5")
+            conn.commit
+            cursor.execute("UPDATE horse_information SET health = 0 WHERE health < 0")
+            conn.commit
+
+            conn.close()
+            return True
+            
+        except mysql.Error as e:
+            print(f'An error has happened while attempting to update all horses values: {e}')
             return False
 
 
@@ -89,6 +126,46 @@ async def printer(interaction: discord.Interaction, printer: str):
     #now printer is a variable that is accepted by the slash command with the accepted type of a string
     #the variable name is the value of the little black box in discord
     await interaction.response.send_message(printer)
+
+@client.tree.command(name="dailyupdate", description="Updates all horse values", guild=GUILD_ID)
+async def runDailyUpdate(interaction: discord.Interaction):
+    result = self.daily_horse_update()
+    if result:
+        user_id = interaction.user_id
+        horse_data = self.gather_all_horse_data(user_id)
+        await interaction.response.send_message(f'The update has been run. Your horse {horse_data[2]} has the following stats.')
+        await interaction.response.send_message(f'Hunger: {horse_data[5]}')
+        await interaction.response.send_message(f'Thirst: {horse_data[6]}')
+        await interaction.response.send_message(f'Cleanliness: {horse_data[7]}')
+        await interaction.response.send_message(f'Health: {horse_data[4]}')
+    else:
+        await interaction.response.send_message(f'An error occurred while trying to run the update.')
+
+@client.tree.command(name="removedata", description="Removes all your data from this bot - type YES to remove your data", guild=GUILD_ID)
+async def runDailyUpdate(interaction: discord.Interaction, confirmation_to_remove_data: str):
+    user_id = interaction.user.id
+    user_name = interaction.user.display_name
+
+    if confirmation_to_remove_data == "YES":
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            
+            cursor.execute(f'DELETE FROM horse_information WHERE user_id = {user_id}')
+            conn.commit
+
+            conn.close()
+
+            print(f'Successfully deleted {user_name}\'s data')
+            await interaction.response.send_message(f'Your data has been successfully removed from this bot. Thank you for your time with us. :heart:')
+
+        
+        except mysql.Error as e:
+            print(f'An error occurred while trying to remove {user_name}\'s data: {e}')
+            await interaction.response.send_message(f'An error occurred while trying to delete your data. Please contact an adminstrator')
+
+    else:
+        await interaction.response.send_message(f'Confirmation not recieved, if you want to remove your data from this bot. Type \'YES\' in the confirmation field')
 
 
 #Stablecare bot specific commands
@@ -168,6 +245,8 @@ async def vetServices(interaction: discord.Interaction, vet_services: int):
             await interaction.response.send_message(f'The vet did a once over on {horse_data[2]}. They said {horse_data[2]} is the picture of health!')
         else:
             await interaction.response.send_message("The vet can't provide services if you don't select any. Please select a service from the list (1-3)")
+
+
 
 #client = Client(command_prefix="!", intents=intents)
 client.run('')
