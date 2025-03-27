@@ -11,8 +11,9 @@ def connect_db():
         #Database Values
     )
 
-
-#this is for standard functions
+#############################################################################
+################################# FUNCTIONS #################################
+#############################################################################
 class Client(commands.Bot):
     async def on_ready(self): #on launch
         print(f'Successfully connected as {self.user}.')
@@ -22,7 +23,7 @@ class Client(commands.Bot):
             synced = await self.tree.sync(guild=guild)
             print(f'Synced {len(synced)} commands to guild {guild.id}')
 
-        except Exception as e: #find errors witht he syncing
+        except Exception as e: #find errors with the syncing of commands
             print(f'Error syncing commands: {e}')
 
     
@@ -32,10 +33,12 @@ class Client(commands.Bot):
         if message.content.startswith('hello'):
             await message.channel.send(f'Hello there {message.author} :horse: :heart:')
 
-    async def on_reaction_add(self, reaction, user): #reading and responding to reactions
+    async def on_reaction_add(self, reaction): #reading and responding to reactions
         await reaction.message.channel.send('You reacted... terminating bot')
-        quit()
+        await close()
 
+    ########################################################################################
+    ################################# STABLECARE FUNCTIONS #################################
     ### gathering information for the horse based in provided user id
     async def gather_all_horse_data(user_id):
         conn = connect_db()
@@ -105,8 +108,9 @@ class Client(commands.Bot):
             print(f'An error has happened while attempting to update all horses values: {e}')
             return False
 
-
-
+###################################################################################
+################################# BOT SET UP CODE #################################
+###################################################################################
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -114,6 +118,10 @@ client = Client(command_prefix="!", intents=intents) #prefixes are outdated howe
 
 GUILD_ID = discord.Object(id=SERVER) 
 #commands are not globally used as it takes 1+hrs to actually get to all discord servers when globally triggered
+
+##################################################################################
+################################# SLASH COMMANDS #################################
+##################################################################################
 
 # this is for slash commands, names of commands have to be lower case
 # descriptions can have upper case
@@ -127,20 +135,50 @@ async def printer(interaction: discord.Interaction, printer: str):
     #the variable name is the value of the little black box in discord
     await interaction.response.send_message(printer)
 
+#demo for how to build an embed
+@client.tree.command(name="embed", description="Demo for embed messages", guild=GUILD_ID)
+async def embedDemo(interaction: discord.Interaction): 
+    embed = discord.Embed(title="I am a title", url="https://www.google.com", discripton="I am a description", color=discord.Color.teal)
+    #url will turn the title to a link
+    #color can be any value so long as you specify it (RGB/HEX/etc) - currently using the preset colors from discord.py
+
+    embed.set_thumbnail(url="http://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/00cbf0f6-e2a4-4246-8615-24f03ef477c3/df8bk75-38c1d630-471c-425c-bd0e-9c84887e0641.png/v1/fill/w_1280,h_905,q_80,strp/first_touches_by_kyraltre3_df8bk75-fullview.jpg?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7ImhlaWdodCI6Ijw9OTA1IiwicGF0aCI6IlwvZlwvMDBjYmYwZjYtZTJhNC00MjQ2LTg2MTUtMjRmMDNlZjQ3N2MzXC9kZjhiazc1LTM4YzFkNjMwLTQ3MWMtNDI1Yy1iZDBlLTljODQ4ODdlMDY0MS5wbmciLCJ3aWR0aCI6Ijw9MTI4MCJ9XV0sImF1ZCI6WyJ1cm46c2VydmljZTppbWFnZS5vcGVyYXRpb25zIl19.1H8DDpq95SYgIVWZqdh8VZjXPDuKkolvlIkKuNY6yDM")
+    
+    #unlimted fields can be added (aparently, dont overdo it tho lol)
+    embed.add_field(name="This is a field", value="This is text associated with field 1", inline=False) 
+    #inline isn't required but is true by default, so the two fields below will be shown side by side while the one above is by itself.
+    embed.add_field(name="This is a field (2)", value="This is text associated with field 2")
+    embed.add_field(name="This is a field (3)", value="This is text associated with field 3")
+
+    embed.set_footer(text="I am smol text at the bottom of the embed!")
+    embed.set_author(name=interaction.user.name, url="https://www.google.com", icon_url="https://www.image.com")
+    #the embed author can be set with this method and it currently shows as the person that sent the command. 
+    #the author text can be made into a url and the icon image set in this method as seen above. 
+
+    await interaction.response.send_message(embed=embed) #send the embed!
+
+#############################################################################################################################################
+################################# MANUALLY PUSH THE UPDATE TO ALL HORSE STATS AND RETURN YOUR HORSE'S STATS #################################
 @client.tree.command(name="dailyupdate", description="Updates all horse values", guild=GUILD_ID)
 async def runDailyUpdate(interaction: discord.Interaction):
     result = self.daily_horse_update()
     if result:
         user_id = interaction.user_id
         horse_data = self.gather_all_horse_data(user_id)
-        await interaction.response.send_message(f'The update has been run. Your horse {horse_data[2]} has the following stats.')
-        await interaction.response.send_message(f'Hunger: {horse_data[5]}')
-        await interaction.response.send_message(f'Thirst: {horse_data[6]}')
-        await interaction.response.send_message(f'Cleanliness: {horse_data[7]}')
-        await interaction.response.send_message(f'Health: {horse_data[4]}')
+
+        if !horse_data:
+            await interaction.response.send_message(f'The update has been run... but you don\'t have a horse to see their updated stats on.')
+        else:
+            await interaction.response.send_message(f'The update has been run. Your horse {horse_data[2]} has the following stats.')
+            await interaction.response.send_message(f'Hunger: {horse_data[5]}')
+            await interaction.response.send_message(f'Thirst: {horse_data[6]}')
+            await interaction.response.send_message(f'Cleanliness: {horse_data[7]}')
+            await interaction.response.send_message(f'Health: {horse_data[4]}')
     else:
         await interaction.response.send_message(f'An error occurred while trying to run the update.')
 
+####################################################################################
+################################# REMOVE USER DATA #################################
 @client.tree.command(name="removedata", description="Removes all your data from this bot - type YES to remove your data", guild=GUILD_ID)
 async def runDailyUpdate(interaction: discord.Interaction, confirmation_to_remove_data: str):
     user_id = interaction.user.id
@@ -167,10 +205,9 @@ async def runDailyUpdate(interaction: discord.Interaction, confirmation_to_remov
     else:
         await interaction.response.send_message(f'Confirmation not recieved, if you want to remove your data from this bot. Type \'YES\' in the confirmation field')
 
-
-#Stablecare bot specific commands
-PONY_NAME : str = "Pony"
-PONY_PRONOUN : int = 3
+#####################################################################################################
+################################# Stablecare core specific commands #################################
+#####################################################################################################
 
 #0-Personal(she) 1-Objective(her) 2-Possessive(hers) 3-Name(Mare) 
 PRONOUNS = np.array([["she", "her", "hers", "Mare"], ["he", "him", "his", "Stallion"], ["he", "him", "his", "Gelding"], ["they", "them", "their", "Horse"]])
@@ -201,8 +238,8 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
 
         conn.close() #safely exit the database connection
 
-
-## HORSE CARE COMMANDS
+#######################################################################################
+################################# HORSE CARE COMMANDS #################################
 @client.tree.command(name="treats", description="Give your pony a treat. Type in whatever treat you want to feed your pony!", guild=GUILD_ID)
 async def treatSnacking(interaction: discord.Interaction, treat_type: str):
     user_id = interaction.user_id
@@ -248,5 +285,5 @@ async def vetServices(interaction: discord.Interaction, vet_services: int):
 
 
 
-#client = Client(command_prefix="!", intents=intents)
+################################# BOT RUN COMMANDS #################################
 client.run('')
