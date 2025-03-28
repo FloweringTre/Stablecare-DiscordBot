@@ -5,6 +5,7 @@ from discord.ext import commands
 from discord import app_commands
 
 SERVER = 0 #add testing discord server id here
+BOT_ADMIN_ROLE = 0 #add specific bot admin role ID here
 
 def connect_db():
     return mysql.connector.connect(
@@ -135,7 +136,7 @@ class Client(commands.Bot):
         embed = discord.Embed(title = title, description = description)
         embed.set_thumbnail(url=thumbnail)
         embed.set_footer(footer)
-        await interaction.response.send_message(embed=embed)
+        return embed
     
     ### Build the stat icon string
     async def stat_string(horse_data):
@@ -176,6 +177,12 @@ class Client(commands.Bot):
         for clen in range(10 - horse_data[7])
             clean += BLANK_SQ
         
+        #finish off strings
+        health += " - Health"
+        hunger += " - Hunger"
+        thirst += " - Thirst"
+        clean += " - Cleanliness"
+
         STAT_STRING = health + "\n" + hunger + "\n" + thirst + "\n" + clean
         return STAT_STRING
 
@@ -293,7 +300,7 @@ PRONOUNS_CAP = np.array([["She", "Her", "Her", "Mare"], ["He", "Him", "His", "St
 ##SET UP A HORSE
 @client.tree.command(name="createpony", description="Set up your pony! Gender: 0-Mare 1-Stallion 2-Gelding", guild=GUILD_ID)
 async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gender : int):
-    if pony_gender > 3 or pony_gender < 0:
+    if pony_gender > 2 or pony_gender < 0:
         await interaction.response.send_message(f'Please try again and properly select a gender for your pony (0-2)')
     else:
         user_id = interaction.user.id
@@ -321,6 +328,53 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
 
         conn.close() #safely exit the database connection
 
+##SET UP A HORSE - ADMIN FOR ANOTHER USER
+@client.tree.command(name="createponyadmin", description="ADMN - Set up a pony for a USER! | Unique Discord User ID needed | Gender: 0-Mare 1-Stallion 2-Gelding", guild=GUILD_ID)
+@command.has_role(BOT_ADMIN_ROLE)
+async def createAPonyADMIN(interaction: discord.Interaction, user_id: int, user_name: str, pony_name: str, pony_gender : int):
+    if pony_gender > 2 or pony_gender < 0:
+        await interaction.response.send_message(f'Please try again and properly select a gender for their pony (0-2)')
+    else:
+        conn = connect_db() 
+        cursor = conn.cursor() 
+        
+        cursor.execute(f"SELECT * FROM horse_information WHERE user_id = {user_id}")
+        user = cursor.fetchone() 
+
+        if user: 
+            await interaction.response.send_message(f'{user_name} already has a horse!')
+        else:
+            try:
+                QUERY = (f"INSERT INTO horse_information VALUES ({user_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 10, 10, 10, 10, 30)")
+                cursor.execute(QUERY)
+                conn.commit() 
+                await interaction.response.send_message(f'{pony_name} has been registered to {user_name}')
+            except mysql.connector.Error as e:
+                print(f'Error occurred while attempting to add a horse for {user_name}: {e}')
+                await interaction.response.send_message(f'An error has occured while attempting to register a horse for {user_name}')
+
+        conn.close() 
+
+##CHECK ON HORSE 
+@client.tree.command(name="checkonpony", description="See how your horse is doing!", guild=GUILD_ID)
+async def checkPony(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    horse_data = await Client.gather_all_horse_data(user_id)
+
+    if horse_data:
+        stats = await Client.stat_string(horse_data)
+        pony_name = f"- **Name:** {horse_data[2]}"
+        pony_gender = f"- **Gender:** {PRONOUNS_CAP[horse_data[3],3]}"
+        message = pony_name + "\n" + pony_gender + "\n\n" + stats 
+        footer = f"{horse_data[2]} is happy you stopped by!"
+
+        embed = Client.build_embed("Horse Information", message, "", footer)
+        await interaction.response.send_message(embed=embed)
+
+    else:
+        await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
+
+
 #######################################################################################
 ################################# HORSE CARE COMMANDS #################################
 @client.tree.command(name="treats", description="Give your pony a treat. Type in whatever treat you want to feed your pony!", guild=GUILD_ID)
@@ -328,7 +382,10 @@ async def treatSnacking(interaction: discord.Interaction, treat_type: str):
     user_id = interaction.user.id
     horse_data = await Client.gather_all_horse_data(user_id)
 
-    await interaction.response.send_message(f'{horse_data[2]} snacks on {treat_type}. {PRONOUNS_CAP[horse_data[3],0]} loved it!')
+    if horse_data:
+        await interaction.response.send_message(f'{horse_data[2]} snacks on {treat_type}. {PRONOUNS_CAP[horse_data[3],0]} loved it!')
+    else:
+        await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
 
 @client.tree.command(name="feed", description="Feed your pony. Type in whatever hay type and pounds you want to feed your pony", guild=GUILD_ID)
 async def foodTime(interaction: discord.Interaction, feed_type: str, feed_amount: int):
