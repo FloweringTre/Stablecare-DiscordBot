@@ -1,5 +1,6 @@
 import numpy as np
 import mysql.connector
+import random
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -10,7 +11,7 @@ BOT_ADMIN_ROLE = 0 #add specific bot admin role ID here
 def connect_db():
     return mysql.connector.connect(
         #Database Values
-
+        
     )
 
 #############################################################################
@@ -49,13 +50,33 @@ class Client(commands.Bot):
         cursor = conn.cursor()
 
         SELECTION_STR = (f'SELECT * from horse_information WHERE user_id = {user_id}')
-        
+        #print(f'Horse Data Query: {SELECTION_STR}')
         cursor.execute(SELECTION_STR)
         horse_data = cursor.fetchone()
         
         conn.close()
         
         return horse_data
+
+    ### gather coat data
+    async def gather_coat_values(coat_id):
+        conn = connect_db()
+        cursor = conn.cursor()
+
+        coat = str(coat_id)
+        cleaning_coat = coat.replace("{", "")
+        shined_coat = cleaning_coat.replace("}", "")
+
+        SELECTION_STR = (f'SELECT * from preset_images WHERE coat_id = ')
+        SELECTION_STR += shined_coat
+
+        #print(f'Coat Query: {SELECTION_STR}')
+        cursor.execute(SELECTION_STR)
+        coat_values = cursor.fetchone()
+        
+        conn.close()
+        
+        return coat_values
     
     ### update table information for a horse
     async def update_horse_data(user_id, data_column, updated_value):
@@ -131,13 +152,7 @@ class Client(commands.Bot):
             print(f"The bad query: {QUERY_STR}")
             return False
     
-    ### Build an embed
-    async def build_embed(title, description, thumbnail, footer):
-        embed = discord.Embed(title = title, description = description)
-        embed.set_thumbnail(url=thumbnail)
-        embed.set_footer(footer)
-        return embed
-    
+
     ### Build the stat icon string
     async def stat_string(horse_data):
         #Variables to add the discord icons to the strings
@@ -160,21 +175,21 @@ class Client(commands.Bot):
         #loop to add color boxes
         for heal in range(horse_data[4]):
             health += HEAL_SQ
-        for hun in range(horse_data[5])
+        for hun in range(horse_data[5]):
             hunger += HUN_SQ
-        for thir in range(horse_data[6])
+        for thir in range(horse_data[6]):
             thirst += THIR_SQ
-        for clen in range(horse_data[7])
+        for clen in range(horse_data[7]):
             clean += CLEN_SQ
         
         #loop to add black boxes
         for heal in range(10 - horse_data[4]):
             health += BLANK_SQ
-        for hun in range(10 - horse_data[5])
+        for hun in range(10 - horse_data[5]):
             hunger += BLANK_SQ
-        for thir in range(10 - horse_data[6])
+        for thir in range(10 - horse_data[6]):
             thirst += BLANK_SQ
-        for clen in range(10 - horse_data[7])
+        for clen in range(10 - horse_data[7]):
             clean += BLANK_SQ
         
         #finish off strings
@@ -303,6 +318,7 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
     if pony_gender > 2 or pony_gender < 0:
         await interaction.response.send_message(f'Please try again and properly select a gender for your pony (0-2)')
     else:
+        coat = random.randrange(0, 6)
         user_id = interaction.user.id
         user_name = interaction.user.display_name
         conn = connect_db() #connect to the database
@@ -312,16 +328,26 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
         cursor.execute(f"SELECT * FROM horse_information WHERE user_id = {user_id}")
         user = cursor.fetchone() #fetchone() gets the first row of the results
 
+        cursor.execute(f"SELECT * FROM preset_images WHERE coat_id = {coat}")
+        coat_values = cursor.fetchone()
+
         if user: #if something was pulled above...
             await interaction.response.send_message(f'Sorry {interaction.user.display_name}, you already have a horse!')
         else:
             # Insert user data into the database
             #await interaction.response.send_message("The SQL server does not have a horse registered to you.")
             try:
-                QUERY = (f"INSERT INTO horse_information VALUES ({user_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 10, 10, 10, 10, 30)")
+                QUERY = (f"INSERT INTO horse_information VALUES ({user_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 10, 10, 10, 10, 30, {coat}, 0, \"\")")
                 cursor.execute(QUERY)
                 conn.commit() #commits the information above to the database to save the addition of information
-                await interaction.response.send_message(f'Congrats! {pony_name} has come home to you! Please take good care of {PRONOUNS_LOW[pony_gender,1]}. :horse:')
+                print(f'A new {coat_values[1]} horse named, {pony_name}, has been registered to {user_name}.')
+                
+                message = (f'Congrats! {pony_name} has come home to you! Please take good care of {PRONOUNS_LOW[pony_gender,1]}. :horse:')
+            
+                embed = discord.Embed(title="A new horse has arrived!", description=message)
+                embed.set_image(url={coat_values[3]})
+                await interaction.response.send_message(embed=embed)
+
             except mysql.connector.Error as e:
                 print(f'Error occurred while attempting to add a horse for {user_name}: {e}')
                 await interaction.response.send_message(f'An error has occured while attempting to add your horse to our stable. Please contact an adminstrator for assistance.')
@@ -329,12 +355,14 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
         conn.close() #safely exit the database connection
 
 ##SET UP A HORSE - ADMIN FOR ANOTHER USER
-@client.tree.command(name="createponyadmin", description="ADMN - Set up a pony for a USER! | Unique Discord User ID needed | Gender: 0-Mare 1-Stallion 2-Gelding", guild=GUILD_ID)
-@command.has_role(BOT_ADMIN_ROLE)
+@client.tree.command(name="createponyadmin", description="Pony Set Up | Unique Discord User ID needed | Gender: 0-M 1-S 2-G", guild=GUILD_ID)
+@commands.has_role(BOT_ADMIN_ROLE)
 async def createAPonyADMIN(interaction: discord.Interaction, user_id: int, user_name: str, pony_name: str, pony_gender : int):
     if pony_gender > 2 or pony_gender < 0:
         await interaction.response.send_message(f'Please try again and properly select a gender for their pony (0-2)')
     else:
+        coat = random.randrange(0, 6)
+
         conn = connect_db() 
         cursor = conn.cursor() 
         
@@ -345,7 +373,7 @@ async def createAPonyADMIN(interaction: discord.Interaction, user_id: int, user_
             await interaction.response.send_message(f'{user_name} already has a horse!')
         else:
             try:
-                QUERY = (f"INSERT INTO horse_information VALUES ({user_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 10, 10, 10, 10, 30)")
+                QUERY = (f"INSERT INTO horse_information VALUES ({user_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 10, 10, 10, 10, 30, {coat}, 0, \"\")")
                 cursor.execute(QUERY)
                 conn.commit() 
                 await interaction.response.send_message(f'{pony_name} has been registered to {user_name}')
@@ -360,6 +388,8 @@ async def createAPonyADMIN(interaction: discord.Interaction, user_id: int, user_
 async def checkPony(interaction: discord.Interaction):
     user_id = interaction.user.id
     horse_data = await Client.gather_all_horse_data(user_id)
+    #print(f'Coat value: {horse_data[9]}')
+    coat_values = await Client.gather_coat_values({horse_data[9]})
 
     if horse_data:
         stats = await Client.stat_string(horse_data)
@@ -367,8 +397,26 @@ async def checkPony(interaction: discord.Interaction):
         pony_gender = f"- **Gender:** {PRONOUNS_CAP[horse_data[3],3]}"
         message = pony_name + "\n" + pony_gender + "\n\n" + stats 
         footer = f"{horse_data[2]} is happy you stopped by!"
+        image = ""
 
-        embed = Client.build_embed("Horse Information", message, "", footer)
+        #print(f'{horse_data[0]}')
+        if horse_data[10] == 1:
+            image = horse_data[11]
+        else:
+            if horse_data[7] == 10 and horse_data[6] == 10 and horse_data[5] == 10 and horse_data[4] == 10:
+                print(f'{horse_data[2]} is happy.')
+                image = coat_values[3]
+            elif horse_data[7] > 5 and horse_data[6] > 4 and horse_data[5] > 5:
+                image = coat_values[2]
+                print(f'{horse_data[2]} is content.')
+            else:
+                image = coat_values[4]
+                print(f'{horse_data[2]} is sad.')
+
+
+        embed = discord.Embed(title="Horse Information", description=message)
+        embed.set_image(url=image) 
+        embed.set_footer(text=footer)
         await interaction.response.send_message(embed=embed)
 
     else:
@@ -383,9 +431,18 @@ async def treatSnacking(interaction: discord.Interaction, treat_type: str):
     horse_data = await Client.gather_all_horse_data(user_id)
 
     if horse_data:
-        await interaction.response.send_message(f'{horse_data[2]} snacks on {treat_type}. {PRONOUNS_CAP[horse_data[3],0]} loved it!')
+        message = (f'{horse_data[2]} snacks on {treat_type}. {PRONOUNS_CAP[horse_data[3],0]} loved it!')
+        title = f'Giving {horse_data[2]} Treats'
+        embed = discord.Embed(title=title, description=message)
+
+        if horse_data[10] == 0:
+            coat_values = await Client.gather_coat_values(horse_data[9])
+            embed.set_image(url = coat_values[8])
+
+        await interaction.response.send_message(embed=embed)
     else:
         await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
+        
 
 @client.tree.command(name="feed", description="Feed your pony. Type in whatever hay type and pounds you want to feed your pony", guild=GUILD_ID)
 async def foodTime(interaction: discord.Interaction, feed_type: str, feed_amount: int):
@@ -395,7 +452,17 @@ async def foodTime(interaction: discord.Interaction, feed_type: str, feed_amount
     if update == False:
         await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
     else:
-        await interaction.response.send_message(f'You feed {horse_data[2]} {feed_amount}lbs of {feed_type}. {PRONOUNS_CAP[horse_data[3],0]} is full and satisfied.')
+        message = (f'You feed {horse_data[2]} {feed_amount}lbs of {feed_type}. {PRONOUNS_CAP[horse_data[3],0]} is full and satisfied.')
+        title = f'Feeding {horse_data[2]}'
+        embed = discord.Embed(title=title, description=message)
+
+        if horse_data[10] == 0:
+            coat_values = await Client.gather_coat_values(horse_data[9])
+            embed.set_image(url = coat_values[6])
+
+        footer = f'{horse_data[2]} is now not hungry!'
+        embed.set_footer(text=footer)
+        await interaction.response.send_message(embed=embed)
 
 @client.tree.command(name="water", description="Fills your pony's water bucket", guild=GUILD_ID)
 async def waterTime(interaction: discord.Interaction):
@@ -406,38 +473,71 @@ async def waterTime(interaction: discord.Interaction):
     if update == False:
         await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
     else:
-        await interaction.response.send_message(f'{horse_data[2]}\'s water bucket is now full. {PRONOUNS_CAP[horse_data[3],0]} takes a nice long sip.')
+        message = (f'{horse_data[2]}\'s water bucket is now full. {PRONOUNS_CAP[horse_data[3],0]} takes a nice long sip.')
+        title = f'Filling {horse_data[2]}\'s Water'
+        embed = discord.Embed(title=title, description=message)
+
+        if horse_data[10] == 0:
+            coat_values = await Client.gather_coat_values(horse_data[9])
+            embed.set_image(url = coat_values[7])
+
+        footer = f'{horse_data[2]} is now not thirsty!'
+        embed.set_footer(text=footer)
+        await interaction.response.send_message(embed=embed)
 
 @client.tree.command(name="brush", description="Brush your pony's coat", guild=GUILD_ID)
 async def brushTime(interaction: discord.Interaction):
     user_id = interaction.user.id
     horse_data = await Client.gather_all_horse_data(user_id)
     update = await Client.update_horse_data(user_id, "clean", 10)
-    print(f'{horse_data}')
+    #print(f'{horse_data}')
+       
     if update == False:
         await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
     else:
-        await interaction.response.send_message(f'{horse_data[2]} enjoys being brushed. {PRONOUNS_CAP[horse_data[3],2]} coat is now spotless!')
+        message = (f'{horse_data[2]} enjoys being brushed. {PRONOUNS_CAP[horse_data[3],2]} coat is now spotless!')
+        title = f'Brushing {horse_data[2]}'
+        embed = discord.Embed(title=title, description=message)
+
+        if horse_data[10] == 0:
+            coat_values = await Client.gather_coat_values(horse_data[9])
+            embed.set_image(url = coat_values[5])
+
+        footer = f'{horse_data[2]} is now at full cleanliness!'
+        embed.set_footer(text=footer)
+        await interaction.response.send_message(embed=embed)
 
 
 @client.tree.command(name="vetcare", description="Heal your pony. Services Menu: 1-Vaccines 2-Dental 3-Check up", guild=GUILD_ID)
 async def vetServices(interaction: discord.Interaction, vet_services: int):
-    user_id = interaction.user.id
-    horse_data = await Client.gather_all_horse_data(user_id)
-    update = await Client.update_horse_data(user_id, "health", 10)
-    if update == False:
-        await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
+    if vet_services > 3 or vet_services < 1:
+        await interaction.response.send_message("The vet can't provide services if you don't select any. Please select a service from the list (1-3)")
+    
     else:
-        print(f'{horse_data[2]}: {PRONOUNS[horse_data[3],2]} health is {horse_data[4]}')
-        match vet_services:
-            case 1:
-                await interaction.response.send_message(f'{horse_data[2]} stood for {PRONOUNS_LOW[horse_data[3],2]} shots. {PRONOUNS_CAP[horse_data[3],0]} were a very brave pony!')
-            case 2:
-                await interaction.response.send_message(f'The dental floating went well. {PRONOUNS_CAP[horse_data[3],2]} teeth are nice and flat now, no more mouth issues for {horse_data[2]}!')
-            case 3:
-                await interaction.response.send_message(f'The vet did a once over on {horse_data[2]}. They said {horse_data[2]} is the picture of health!')
-            case _:
-                await interaction.response.send_message("The vet can't provide services if you don't select any. Please select a service from the list (1-3)")
+        user_id = interaction.user.id
+        horse_data = await Client.gather_all_horse_data(user_id)
+        update = await Client.update_horse_data(user_id, "health", 10)
+        
+        if update == False:
+            await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
+        else:
+            print(f'{horse_data[2]}: {PRONOUNS_CAP[horse_data[3],2]} health is {horse_data[4]}')
+            message = ""
+            footer = f'{horse_data[2]} is now at full health!'
+            match vet_services:
+                case 1:
+                    message = (f'{horse_data[2]} stood for {PRONOUNS_LOW[horse_data[3],2]} shots. {PRONOUNS_CAP[horse_data[3],0]} was a very brave pony!')
+                case 2:
+                    message = (f'The dental floating went well. {PRONOUNS_CAP[horse_data[3],2]} teeth are nice and flat now, no more mouth issues for {horse_data[2]}!')
+                case 3:
+                    message = (f'The vet did a once over on {horse_data[2]}. They said {horse_data[2]} is the picture of health!')
+                case _:
+                    message = ("The vet can't provide services if you don't select any. Please select a service from the list (1-3)")
+                    footer = ""
+                    
+            embed = discord.Embed(title="Vet Visit", description=message)
+            embed.set_footer(text=footer)
+            await interaction.response.send_message(embed=embed)
 
 
 
