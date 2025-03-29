@@ -7,6 +7,10 @@ from discord import app_commands
 
 SERVER = 0 #add testing discord server id here
 BOT_ADMIN_ROLE = 0 #add specific bot admin role ID here
+BOT_INTERACTION_ROLE = 0 #add specific bot role ID here
+BOT_LOGGING_CHANNEL = 0 #add specific bot logging channel here
+
+NO_HORSE_ERROR_MESSAGE = f'Sorry, we don\'t have a horse registered to you in our barn. You can get a horse using the /createapony command.'
 
 def connect_db():
     return mysql.connector.connect(
@@ -219,7 +223,7 @@ GUILD_ID = discord.Object(id=SERVER)
 
 # this is for slash commands, names of commands have to be lower case
 # descriptions can have upper case
-@client.tree.command(name="hello", description="Says hello :)", guild=GUILD_ID)
+""" @client.tree.command(name="hello", description="Says hello :)", guild=GUILD_ID)
 async def sayHello(interaction: discord.Interaction):
     await interaction.response.send_message(f'Hello there {interaction.user.display_name}!')
 
@@ -249,36 +253,35 @@ async def embedDemo(interaction: discord.Interaction):
     #the embed author can be set with this method and it currently shows as the person that sent the command. 
     #the author text can be made into a url and the icon image set in this method as seen above. 
 
-    await interaction.response.send_message(embed=embed) #send the embed!
+    await interaction.response.send_message(embed=embed) #send the embed! """
 
 #############################################################################################################################################
 ################################# MANUALLY PUSH THE UPDATE TO ALL HORSE STATS AND RETURN YOUR HORSE'S STATS #################################
 @client.tree.command(name="dailyupdate", description="Updates all horse values", guild=GUILD_ID)
+@app_commands.checks.has_role(BOT_ADMIN_ROLE)
 async def runDailyUpdate(interaction: discord.Interaction):
+    log_channel = client.get_channel(BOT_LOGGING_CHANNEL)
     result = await Client.daily_horse_update()
+    user_name = interaction.user.display_name
+
     if result:
-        user_id = interaction.user.id
-        horse_data = await Client.gather_all_horse_data(user_id)
-
-        if horse_data:
-            print(horse_data)
-            await interaction.response.send_message("Update complete")
-            #await interaction.response.send_message(f'The update has been run. Your horse {horse_data[2]} has the following stats.')
-            #await interaction.response.send_message(f'Hunger: {horse_data[5]}')
-            #await interaction.response.send_message(f'Thirst: {horse_data[6]}')
-            #await interaction.response.send_message(f'Cleanliness: {horse_data[7]}')
-            #await interaction.response.send_message(f'Health: {horse_data[4]}')
-
-        else:
-            await interaction.response.send_message(f'The update has been run... but you don\'t have a horse to see their updated stats on.')
+        await log_channel.send(f'{user_name} ran the daily update command to all horses successfully.')
 
     else:
-        await interaction.response.send_message(f'An error occurred while trying to run the update.')
+        await log_channel.send(f'Sorry {user_name}, an error occurred while trying to run the update to all horse stats.')
+
+@runDailyUpdate.error
+async def dailyUpdatesError(interaction: discord.Interaction, error):
+    log_channel = client.get_channel(BOT_LOGGING_CHANNEL)
+    print(f'{interaction.user.display_name} attempted to run the daily update command')
+    await log_channel.send(f'{interaction.user.display_name} attempted to run the daily update command')
+    await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, only Stablecare Barn Managers can run this command.', ephemeral=True)
 
 ####################################################################################
 ################################# REMOVE USER DATA #################################
 @client.tree.command(name="removedata", description="Removes all your data from this bot - type YES to remove your data", guild=GUILD_ID)
 async def runDailyUpdate(interaction: discord.Interaction, confirmation_to_remove_data: str):
+    log_channel = client.get_channel(BOT_LOGGING_CHANNEL)
     user_id = interaction.user.id
     user_name = interaction.user.display_name
 
@@ -294,15 +297,16 @@ async def runDailyUpdate(interaction: discord.Interaction, confirmation_to_remov
             conn.close()
 
             print(f'Successfully deleted {user_name}\'s data')
-            await interaction.response.send_message(f'Your data has been successfully removed from this bot. Thank you for your time with us. :heart:')
-
+            await interaction.response.send_message(f'Your data has been successfully removed from this bot. Thank you for your time with us. :heart:', ephemeral = True)
+            await log_channel.send(f'{user_name} has removed their data from the bot and server.')
         
         except mysql.Error as e:
             print(f'An error occurred while trying to remove {user_name}\'s data: {e}')
-            await interaction.response.send_message(f'An error occurred while trying to delete your data. Please contact an adminstrator')
+            await log_channel.send(f'An error has occurred while attempting to remove {user_name}\'s data.')
+            await interaction.response.send_message(f'An error occurred while trying to delete your data. Please contact an adminstrator', ephemeral = True)
 
     else:
-        await interaction.response.send_message(f'Confirmation not recieved, if you want to remove your data from this bot. Type \'YES\' in the confirmation field')
+        await interaction.response.send_message(f'Confirmation not recieved, if you want to remove your data from this bot. Type \'YES\' in the confirmation field', ephemeral = True)
 
 #####################################################################################################
 ################################# Stablecare core specific commands #################################
@@ -315,8 +319,9 @@ PRONOUNS_CAP = np.array([["She", "Her", "Her", "Mare"], ["He", "Him", "His", "St
 ##SET UP A HORSE
 @client.tree.command(name="createpony", description="Set up your pony! Gender: 0-Mare 1-Stallion 2-Gelding", guild=GUILD_ID)
 async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gender : int):
+    log_channel = client.get_channel(BOT_LOGGING_CHANNEL)
     if pony_gender > 2 or pony_gender < 0:
-        await interaction.response.send_message(f'Please try again and properly select a gender for your pony (0-2)')
+        await interaction.response.send_message(f'Please try again and properly select a gender for your pony (0-2)', ephemeral = True)
     else:
         coat = random.randrange(0, 6)
         user_id = interaction.user.id
@@ -332,7 +337,8 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
         coat_values = cursor.fetchone()
 
         if user: #if something was pulled above...
-            await interaction.response.send_message(f'Sorry {interaction.user.display_name}, you already have a horse!')
+            await interaction.response.send_message(f'Sorry {interaction.user.display_name}, you already have a horse!', ephemeral = True)
+            await log_channel.send(f'{interaction.user.display_name} attempted to rergister a second horse with the createapony command')
         else:
             # Insert user data into the database
             #await interaction.response.send_message("The SQL server does not have a horse registered to you.")
@@ -341,23 +347,27 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
                 cursor.execute(QUERY)
                 conn.commit() #commits the information above to the database to save the addition of information
                 print(f'A new {coat_values[1]} horse named, {pony_name}, has been registered to {user_name}.')
+                await log_channel.send(f'{interaction.user.display_name} has registered a new {coat_values[1]} horse named, {pony_name}.')
                 
                 message = (f'Congrats! {pony_name} has come home to you! Please take good care of {PRONOUNS_LOW[pony_gender,1]}. :horse:')
             
                 embed = discord.Embed(title="A new horse has arrived!", description=message)
-                embed.set_image(url={coat_values[3]})
+                embed.set_image(url=coat_values[3])
                 await interaction.response.send_message(embed=embed)
 
             except mysql.connector.Error as e:
                 print(f'Error occurred while attempting to add a horse for {user_name}: {e}')
-                await interaction.response.send_message(f'An error has occured while attempting to add your horse to our stable. Please contact an adminstrator for assistance.')
+                await log_channel.send(f'{interaction.user.display_name} has encountered an error while attempting to register a horse.')
+                await interaction.response.send_message(f'An error has occured while attempting to add your horse to our stable. Please contact an adminstrator for assistance.', ephemeral = True)
 
         conn.close() #safely exit the database connection
 
 ##SET UP A HORSE - ADMIN FOR ANOTHER USER
 @client.tree.command(name="createponyadmin", description="Pony Set Up | Unique Discord User ID needed | Gender: 0-M 1-S 2-G", guild=GUILD_ID)
-@commands.has_role(BOT_ADMIN_ROLE)
+@app_commands.checks.has_role(BOT_ADMIN_ROLE)
 async def createAPonyADMIN(interaction: discord.Interaction, user_id: int, user_name: str, pony_name: str, pony_gender : int):
+    log_channel = client.get_channel(BOT_LOGGING_CHANNEL)
+    print(f'{interaction.user.display_name} ran the admin create a pony command.')
     if pony_gender > 2 or pony_gender < 0:
         await interaction.response.send_message(f'Please try again and properly select a gender for their pony (0-2)')
     else:
@@ -371,20 +381,24 @@ async def createAPonyADMIN(interaction: discord.Interaction, user_id: int, user_
 
         if user: 
             await interaction.response.send_message(f'{user_name} already has a horse!')
+            await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command - unsucessful - {user_name} already had a horse')
         else:
             try:
                 QUERY = (f"INSERT INTO horse_information VALUES ({user_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 10, 10, 10, 10, 30, {coat}, 0, \"\")")
                 cursor.execute(QUERY)
                 conn.commit() 
                 await interaction.response.send_message(f'{pony_name} has been registered to {user_name}')
+                await log_channel.send(f'{interaction.user.display_name} ran the admin create a pony command to register a horse to {user_name}')
             except mysql.connector.Error as e:
                 print(f'Error occurred while attempting to add a horse for {user_name}: {e}')
+                await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command - unsuccessful - an error occurred while trying to register a horse for {user_name}')
                 await interaction.response.send_message(f'An error has occured while attempting to register a horse for {user_name}')
 
         conn.close() 
 
 ##CHECK ON HORSE 
 @client.tree.command(name="checkonpony", description="See how your horse is doing!", guild=GUILD_ID)
+@app_commands.checks.has_role(BOT_INTERACTION_ROLE)
 async def checkPony(interaction: discord.Interaction):
     user_id = interaction.user.id
     horse_data = await Client.gather_all_horse_data(user_id)
@@ -420,8 +434,18 @@ async def checkPony(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed)
 
     else:
-        await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
+@checkPony.error
+async def checkPonyError(interaction: discord.Interaction, error):
+    await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, you don\'t have the StableCare interaction role.', ephemeral=True)
+
+@createAPonyADMIN.error
+async def checkPonyADMINError(interaction: discord.Interaction, error):
+    log_channel = client.get_channel(BOT_LOGGING_CHANNEL)
+    print(f'{interaction.user.display_name} attempted to use the admin create a pony command')
+    await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command')
+    await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, only Stablecare Barn Managers can run this command.', ephemeral=True)
 
 #######################################################################################
 ################################# HORSE CARE COMMANDS #################################
@@ -441,17 +465,16 @@ async def treatSnacking(interaction: discord.Interaction, treat_type: str):
 
         await interaction.response.send_message(embed=embed)
     else:
-        await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral = True)
         
 
 @client.tree.command(name="feed", description="Feed your pony. Type in whatever hay type and pounds you want to feed your pony", guild=GUILD_ID)
 async def foodTime(interaction: discord.Interaction, feed_type: str, feed_amount: int):
+    #log_channel = client.get_channel(BOT_LOGGING_CHANNEL)
     user_id = interaction.user.id
     horse_data = await Client.gather_all_horse_data(user_id)
     update = await Client.update_horse_data(user_id, "hunger", 10)
-    if update == False:
-        await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
-    else:
+    if horse_data:
         message = (f'You feed {horse_data[2]} {feed_amount}lbs of {feed_type}. {PRONOUNS_CAP[horse_data[3],0]} is full and satisfied.')
         title = f'Feeding {horse_data[2]}'
         embed = discord.Embed(title=title, description=message)
@@ -463,16 +486,18 @@ async def foodTime(interaction: discord.Interaction, feed_type: str, feed_amount
         footer = f'{horse_data[2]} is now not hungry!'
         embed.set_footer(text=footer)
         await interaction.response.send_message(embed=embed)
+        #await log_channel.send(f'{interaction.user.display_name} has feed their horse.')
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+        #await log_channel.send(f'{interaction.user.display_name} attempted to feed a horse they dont have.')
 
 @client.tree.command(name="water", description="Fills your pony's water bucket", guild=GUILD_ID)
 async def waterTime(interaction: discord.Interaction):
     user_id = interaction.user.id
     horse_data = await Client.gather_all_horse_data(user_id)
     update = await Client.update_horse_data(user_id, "thirst", 10)
-    print(f'{horse_data}')
-    if update == False:
-        await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
-    else:
+    #print(f'{horse_data}')
+    if horse_data:
         message = (f'{horse_data[2]}\'s water bucket is now full. {PRONOUNS_CAP[horse_data[3],0]} takes a nice long sip.')
         title = f'Filling {horse_data[2]}\'s Water'
         embed = discord.Embed(title=title, description=message)
@@ -484,6 +509,8 @@ async def waterTime(interaction: discord.Interaction):
         footer = f'{horse_data[2]} is now not thirsty!'
         embed.set_footer(text=footer)
         await interaction.response.send_message(embed=embed)
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
 @client.tree.command(name="brush", description="Brush your pony's coat", guild=GUILD_ID)
 async def brushTime(interaction: discord.Interaction):
@@ -492,9 +519,7 @@ async def brushTime(interaction: discord.Interaction):
     update = await Client.update_horse_data(user_id, "clean", 10)
     #print(f'{horse_data}')
        
-    if update == False:
-        await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
-    else:
+    if horse_data:
         message = (f'{horse_data[2]} enjoys being brushed. {PRONOUNS_CAP[horse_data[3],2]} coat is now spotless!')
         title = f'Brushing {horse_data[2]}'
         embed = discord.Embed(title=title, description=message)
@@ -506,21 +531,20 @@ async def brushTime(interaction: discord.Interaction):
         footer = f'{horse_data[2]} is now at full cleanliness!'
         embed.set_footer(text=footer)
         await interaction.response.send_message(embed=embed)
-
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
 @client.tree.command(name="vetcare", description="Heal your pony. Services Menu: 1-Vaccines 2-Dental 3-Check up", guild=GUILD_ID)
 async def vetServices(interaction: discord.Interaction, vet_services: int):
     if vet_services > 3 or vet_services < 1:
-        await interaction.response.send_message("The vet can't provide services if you don't select any. Please select a service from the list (1-3)")
+        await interaction.response.send_message("The vet can't provide services if you don't select any. Please select a service from the list (1-3)", ephemeral = True)
     
     else:
         user_id = interaction.user.id
         horse_data = await Client.gather_all_horse_data(user_id)
         update = await Client.update_horse_data(user_id, "health", 10)
         
-        if update == False:
-            await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, we don\'t have a horse registered to you')
-        else:
+        if horse_data:
             print(f'{horse_data[2]}: {PRONOUNS_CAP[horse_data[3],2]} health is {horse_data[4]}')
             message = ""
             footer = f'{horse_data[2]} is now at full health!'
@@ -538,6 +562,8 @@ async def vetServices(interaction: discord.Interaction, vet_services: int):
             embed = discord.Embed(title="Vet Visit", description=message)
             embed.set_footer(text=footer)
             await interaction.response.send_message(embed=embed)
+        else:
+            await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
 
 
