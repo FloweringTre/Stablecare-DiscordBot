@@ -19,7 +19,7 @@ BOT_CREDITS = f'This bot was made in collaboration between kyraltre and MoonFlow
 def connect_db():
     return mysql.connector.connect(
         #Database Values
-               
+              
     )
 
 #############################################################################
@@ -30,8 +30,8 @@ class Client(commands.Bot):
         print(f'Successfully connected as {self.user}.')
         print("successfully finished startup")
         
-        #self.stats_update.start()
-        #print(f'started the stat update loop')
+        self.stats_update.start()
+        print(f'started the stat update loop')
 
         try: #force syncing with the dev server to test commands
             guild=discord.Object(id=SERVER)
@@ -78,13 +78,13 @@ class Client(commands.Bot):
             
             cursor.execute(QUERY_STR, (updated_value, server_id))
             conn.commit()
-            print(f"The good query: {QUERY_STR}")
+            #print(f"The good query: {QUERY_STR}")
 
             conn.close()
             return True
 
         except mysql.connector.Error as e:
-            print(f"An error has happened while attempting to server update data: {e}")
+            print(f"An error has happened while attempting to server update data for {server_id}: {e}")
             print(f"The bad query: {QUERY_STR}")
             return False
 
@@ -127,7 +127,7 @@ class Client(commands.Bot):
         conn = connect_db()
         cursor = conn.cursor()
 
-        SELECTION_STR = (f'SELECT user_name, horse_name, {point_type}_pts FROM horse_information WHERE server_id = {server_id}')
+        SELECTION_STR = (f'SELECT user_name, horse_name, {point_type}_pts FROM horse_information WHERE server_id = {server_id} ORDER BY {point_type}_pts DESC')
         #print(f'Horse Data Query: {SELECTION_STR}')
         cursor.execute(SELECTION_STR)
         leaderboard = cursor.fetchmany(5)
@@ -146,7 +146,7 @@ class Client(commands.Bot):
             
             cursor.execute(QUERY_STR, (updated_value, user_id, server_id))
             conn.commit()
-            print(f"The good query: {QUERY_STR}")
+            #print(f"The good query: {QUERY_STR}")
 
             conn.close()
             return True
@@ -163,9 +163,9 @@ class Client(commands.Bot):
             cursor = conn.cursor()
             
             #reduce stat values
-            cursor.execute("UPDATE horse_information SET hunger = hunger - 3")
-            cursor.execute("UPDATE horse_information SET thirst = thirst - 5")
-            cursor.execute("UPDATE horse_information SET clean = clean - 3")
+            cursor.execute("UPDATE horse_information SET hunger = hunger - 2")
+            cursor.execute("UPDATE horse_information SET thirst = thirst - 3")
+            cursor.execute("UPDATE horse_information SET clean = clean - 1")
             conn.commit()
 
             #ensure no stat is below zero
@@ -186,12 +186,20 @@ class Client(commands.Bot):
             cursor.execute("UPDATE horse_information SET bot_pts = bot_pts + 10 WHERE health = 10")
             conn.commit()
 
+            cursor.execute("SELECT COUNT(*) FROM server_data")
+            servers = cursor.fetchone()
+            cursor.execute("SELECT COUNT(*) FROM horse_information")
+            horses = cursor.fetchone()
+
+            message = servers + horses
+
             conn.close()
-            return True
+            return message
 
         except mysql.connector.Error as e:
             print(f'An error has happened while attempting to update all horses values: {e}')
-            return False
+            message = ""
+            return message
 
     ### Update the money of a listed player
     async def update_user_money(user_id, server_id, change_value):
@@ -203,7 +211,7 @@ class Client(commands.Bot):
             
             cursor.execute(QUERY_STR, (change_value, user_id, server_id))
             conn.commit()
-            print(f"The good query: {QUERY_STR}")
+            #print(f"The good query: {QUERY_STR}")
 
             conn.close()
             return True
@@ -223,7 +231,7 @@ class Client(commands.Bot):
             
             cursor.execute(QUERY_STR, (change_value, user_id, server_id))
             conn.commit()
-            print(f"The good query: {QUERY_STR}")
+            #print(f"The good query: {QUERY_STR}")
 
             conn.close()
             return True
@@ -314,29 +322,93 @@ class Client(commands.Bot):
                 QUERY_STR = (f"UPDATE horse_information SET {data_column} = %s WHERE user_id = %s AND server_id = %s")
                 cursor.execute(QUERY_STR, (image_url, user_id, server_id))
                 conn.commit()
-
-                if image_url == "":
-                    custom = False
-                    for image in range(15,22):
-                        if not(horse_data[image] == ""):
-                            custom = True
-
-                    if not custom:
-                        QUERY_CUST = (f"UPDATE horse_information SET custom_thumb = 0 WHERE user_id = %s AND server_id = %s")
-                        cursor.execute(QUERY_CUST, (user_id, server_id))
-                        print(f"The good query: {QUERY_CUST}")
                     
-                else:
-                    QUERY_CUST = (f"UPDATE horse_information SET custom_thumb = 1 WHERE user_id = %s AND server_id = %s")
-                    cursor.execute(QUERY_CUST, (user_id, server_id))
-                    conn.commit()
-                    print(f"The good query: {QUERY_CUST}")
+                QUERY_CUST = (f"UPDATE horse_information SET custom_thumb = 1 WHERE user_id = %s AND server_id = %s")
+                cursor.execute(QUERY_CUST, (user_id, server_id))
+                conn.commit()
+                #print(f"The good query: {QUERY_CUST}")
 
                 conn.close()
                 return True
 
             except mysql.connector.Error as e:
                 print(f"An error has happened while attempting to update {user_id}'s {data_column} in {server_id}: {e}")
+                print(f"The bad query: {QUERY_STR}")
+                print(f"The bad query: {QUERY_CUST}")
+                return False
+
+### Remove custom images to use
+    async def remove_custom_image(user_id, server_id, image_type):
+        horse_data = await Client.gather_all_horse_data(user_id, server_id)
+        data_column = ""
+        array_value = 0
+        image_url = ""
+        match image_type:
+            case 0:
+                data_column = "stand_ref_image"
+                array_value = 15 
+            case 1:
+                data_column = "happy_ref_image"
+                array_value = 16
+            case 2:
+                data_column = "sad_ref_image"
+                array_value = 17
+            case 3:
+                data_column = "feed_img"
+                array_value = 18
+            case 4:
+                data_column = "water_img"
+                array_value = 19
+            case 5:
+                data_column = "brush_img"
+                array_value = 20
+            case 6:
+                data_column = "treat_img"
+                array_value = 21
+            case _:
+                data_column = ""
+                array_value = 0
+
+        if data_column == "":
+            return False
+        if array_value == 0:
+            return False
+        
+        if horse_data[array_value] == "":
+            return True
+        
+        else:
+            try:
+                conn = connect_db()
+                cursor = conn.cursor()
+
+                QUERY_STR = (f"UPDATE horse_information SET {data_column} = %s WHERE user_id = %s AND server_id = %s")
+                cursor.execute(QUERY_STR, (image_url, user_id, server_id))
+                conn.commit()
+
+                custom = False
+                #print(horse_data)
+                for image in range(15,22):
+                    if not(horse_data[image] == ""):
+                        if image == array_value:
+                            custom = False
+                        else:
+                            custom = True
+                            #print(f'custom image found for {horse_data[3]}')
+
+                if not custom:
+                    #print(f'No custom images found for {horse_data[3]}')
+                    QUERY_CUST = (f"UPDATE horse_information SET custom_thumb = 0 WHERE user_id = {user_id} AND server_id = {server_id}")
+                    cursor.execute(QUERY_CUST)
+                    conn.commit()
+                    #print(f"The good query: {QUERY_CUST}")
+                    
+
+                conn.close()
+                return True
+
+            except mysql.connector.Error as e:
+                print(f"An error has happened while attempting to remove {user_id}'s {data_column} in {server_id}: {e}")
                 print(f"The bad query: {QUERY_STR}")
                 print(f"The bad query: {QUERY_CUST}")
                 return False
@@ -348,24 +420,18 @@ class Client(commands.Bot):
         result = await Client.daily_horse_update()
         message = ""
 
-        if result:
-            message = (f'The stats of all horses have been successfully updated. These update every 12 hours.')
+        if result == "":
+            message = (f'An error occurred while trying to run the update to all horse stats.')
 
         else:
-            message = (f'Sorry, an error occurred while trying to run the update to all horse stats. \nIf this error happens twice in a row (ie: no updates in a 24 hour period), please reach out to kyraltre. \nThank you :heart:')
+            #print(result)
+            message = (f'The stats of {result[1]} horses have been successfully updated across {result[0]} servers.')
         
-        for guild in client.guilds:
-            server_id = guild.id
-            server_data = await client.get_server_data(server_id)
-            for channel in guild.channels:
-                if channel.id == server_data[5]:
-                    await channel.send(f'{message}')
+        print(message)
         
-
     @stats_update.before_loop
     async def before_my_task(self):
             await self.wait_until_ready()
-
 
 ###################################################################################
 ################################# BOT SET UP CODE #################################
@@ -381,7 +447,6 @@ GUILD_ID = discord.Object(id=SERVER)
 ##################################################################################
 ################################# SLASH COMMANDS #################################
 ##################################################################################
-
 # this is for slash commands, names of commands have to be lower case
 # descriptions can have upper case
 """ #demo for how to build an embed
@@ -409,7 +474,7 @@ async def embedDemo(interaction: discord.Interaction):
 ########################################################################################
 ################################# INFORMATION COMMANDS #################################
 ### help on user commands
-@client.tree.command(name="information", description="Get information on the StableCare bot", guild=GUILD_ID)
+@client.tree.command(name="helpinformation", description="Get information on the StableCare bot", guild=GUILD_ID)
 async def informationMessage(interaction: discord.Interaction):
     horse_data = await Client.gather_all_horse_data(interaction.user.id, interaction.guild.id)
     message = ""
@@ -421,49 +486,75 @@ async def informationMessage(interaction: discord.Interaction):
         hpronoun = var2.replace("']", "")
 
         title = f'Information about the StableCare Bot!'
-        message = (f'Here are the commands available to help you interact with your horse, {horse_data[3]}. ' + 
-                   f'\n\n:horse: **Check in on your horse and see {hpronoun} stats.** :horse:' + 
-                   f'\n /checkonpony' +
-
-                   f'\n\n:green_apple: **Improve {horse_data[3]}\'s hunger stat** :green_apple:' + 
-                   f'\n /feed - List what you want to feed {hpronoun} and how many pounds to feed {hpronoun}.' +  
-                   f'\n\n:droplet: **Improve {horse_data[3]}\'s thirst stat** :droplet:' + 
-                   f'\n /water' + 
-                   f'\n\n:sparkles: **Improve {horse_data[3]}\'s cleanliness stat** :sparkles:' + 
-                   f'\n /brush' + 
-                   f'\n\n:heart: **Improve {horse_data[3]}\'s health stat** :heart:' + 
-                   f'\n /vetcare - List what you want vet service you want to give {horse_data[3]}.' + 
-                   f'\n\n:candy: **Give {horse_data[3]} a treat** :candy:' + 
-                   f'\n /treats - List what treat you want to feed {hpronoun}.' + 
+        message = (f'Here are the commands available to help you interact with your horse, {horse_data[3]}. ') 
+        
+        embed = discord.Embed(title= title, description=message, color= BOT_COLOR)
+            
+        check_t = (f':horse: **Check in on your horse and see {hpronoun} stats.** :horse:')
+        check_m = (f' /checkonpony\n')
+        feed_t = (f':green_apple: **Improve {horse_data[3]}\'s hunger stat** :green_apple:' ) 
+        feed_m = (f' /feed - List what you want to feed {hpronoun} and how many pounds to feed {hpronoun}.\n' )  
+        water_t = (f':droplet: **Improve {horse_data[3]}\'s thirst stat** :droplet:' ) 
+        water_m = (f' /water\n') 
+        brush_t = (f':sparkles: **Improve {horse_data[3]}\'s cleanliness stat** :sparkles:' ) 
+        brush_m = (f' /brush\n') 
+        vet_t = (f':heart: **Improve {horse_data[3]}\'s health stat** :heart:' ) 
+        vet_m = (f' /vetcare - List what you want vet service you want to give {horse_data[3]}.\n' ) 
+        treat_t = (f':candy: **Give {horse_data[3]} a treat** :candy:' ) 
+        treat_m = (f' /treats - List what treat you want to feed {hpronoun}.\n' ) 
                 
-                   f'\n\n:rosette: **Give your horse HARPG points.** :rosette:' + 
-                   f'\n /harpgpoints - Allow StableCare to help track your HARPG points for {horse_data[3]}' +
-                   f'\n\n:trophy: **Check out the server leaderboard** :trophy:' + 
-                   f'\n /leaderboard - You can see the leaderboard for either the Server Points or for  StableCare\'s Care Points' +
+        point_t = (f':rosette: **Give your horse HARPG points.** :rosette:' ) 
+        point_m = (f' /harpgpoints - Allow StableCare to help track your HARPG points for {horse_data[3]}\n' )
+        lead_t = (f':trophy: **Check out the server leaderboard** :trophy:' ) 
+        lead_m = (f' /leaderboard - You can see the leaderboard for either the Server Points or for  StableCare\'s Care Points\n' )
                    
+        image_t = (f':camera_with_flash: **Set custom images for {horse_data[3]}.** :camera_with_flash:' ) 
+        image_m = (f' /customimages - List what custom image you want to add and then the image URL. \nGet additional help and info in /helpcustomimages\n' )
 
-                   f'\n\n:camera_with_flash: **Set custom images for {horse_data[3]}.** :camera_with_flash:' + 
-                   f'\n /customimages - List what custom image you want to add and then the image URL.' +
-                   f'\n Get additional help and info in /helpcustomimages' +
+        data_t = (f':scissors: **Remove your data with the bot** :scissors:' ) 
+        data_m = (f' /removedata - This will erase all stored data associated with your account. \nRequires a \'YES\' for confirmation.\n')
+            
+        embed.add_field(name= check_t,value= check_m, inline=False)
+        embed.add_field(name= feed_t,value= feed_m, inline=False)
+        embed.add_field(name= water_t,value= water_m, inline=False)
+        embed.add_field(name= brush_t,value= brush_m, inline=False)
+        embed.add_field(name= vet_t,value= vet_m, inline=False)
+        embed.add_field(name= treat_t,value= treat_m, inline=False)
+        embed.add_field(name= point_t,value= point_m, inline=False)
+        embed.add_field(name= lead_t,value= lead_m, inline=False)
+        embed.add_field(name= image_t,value= image_m, inline=False)
+        embed.add_field(name= data_t,value= data_m, inline=False)
 
-                   f'\n\n:scissors: **Remove your data with the bot** :scissors:' + 
-                   f'\n /removedata - This will erase all stored data associated with your account. \nRequires a \'YES\' for confirmation.'
-                   )
     else:
-       title = f'Welcome to the StableCare Bot!'
-       message = (f':horse: **Bring a new horse home!** :horse:' +
-                  f'\n /createapony - Set your new horse\'s name and gender (0-Mare, 1-Stallion, 2-Gelding).' +
+        title = f'Welcome to the StableCare Bot!'
+        message = (f'We are thankful that you choose to come to our barn!')
 
-                  f'\n\n:scissors: **We value your data!** :scissors:' + 
-                  f'\n Not only will we never share your data, we also have a built in command to remove all your data at any time. Use \'/removedata\' to erase your data from our bot.'
-                  )
+        embed = discord.Embed(title= title, description=message, color= BOT_COLOR)
+
+        about_t = f':heart: **About the StableCare Bot** :heart:'
+        about_m = (
+            f' This bot (currently) uses slash commands to operate a cute tamagatchi like game where users can have a horse and perform care tasks on it.'
+            + f'\nCustom images can be set for the horse and users can use StableCare to track HARPG points. Server moderators can use StableCare to give out server related points.' 
+            + f'\n\nThe StableCare bot only requires the permission to send and manage messages.\n'
+        )
+        
+
+        create_t = f':horse: **Bring a new horse home!** :horse:'
+        create_m = f' /createapony - Set your new horse\'s name and gender (0-Mare, 1-Stallion, 2-Gelding)\n'
+
+        data_t = f':scissors: **We value your data!** :scissors:'
+        data_m = f'Not only will we never share your data, we also have a built in command to remove all your data at any time. Use \'/removedata\' to erase your data from our bot.\n'
+        
+        embed.add_field(name= about_t,value= about_m, inline=False)
+        embed.add_field(name= create_t,value= create_m, inline=False)
+        embed.add_field(name= data_t,value= data_m, inline=False)
     
-    embed = discord.Embed(title= title, description=message, color= BOT_COLOR)
+    
     embed.set_footer(text=BOT_CREDITS)
     await interaction.response.send_message(embed=embed)
 
 ### help on the admin specific commands
-@client.tree.command(name="informationadmin", description="Admin - Information for the server moderators for this bot.", guild=GUILD_ID)
+@client.tree.command(name="helpinformationadmin", description="Admin - Information for the server moderators for this bot.", guild=GUILD_ID)
 async def admininformation(interaction: discord.Interaction):
     server_id = interaction.guild.id
     server_data = await Client.get_server_data(server_id)
@@ -473,14 +564,14 @@ async def admininformation(interaction: discord.Interaction):
 
     if server_data:
         for role in user_roles:
-            if role.id == server_data[4]:
+            if role.id == server_data[3]:
                 admin_found = True
-                log_channel = client.get_channel(server_data[5])
+                log_channel = client.get_channel(server_data[4])
                 
                 title = f'Moderator Information for StableCare'
                 message = (
                     f'As of right now, users interact with this bot using slash commands. Each users can have one horse per server.' + f'\n' +
-                    f'Horses will need to have their stats cared for using these slash commands. The stats for the horse will drop every 12 hours automatically. Your logging channel will recieve an update when these updates happen' + f'\n' +
+                    f'Horses will need to have their stats cared for using these slash commands. The stats for the horse will drop every 6 hours automatically.' + f'\n' +
                     
                     f'\nThese are the moderator specific commands you have for this bot!'
                            )
@@ -488,13 +579,13 @@ async def admininformation(interaction: discord.Interaction):
                 embed = discord.Embed(title=title, description=message, color=BOT_COLOR)
                 
                 #embed.add_field(name="", value="", inline=False)
-                embed.add_field(name="Register a Horse for a User", value="You can run the /createaponyadmin command to register a horse for a user.", inline=False)
-                embed.add_field(name="Set/Remove Custom Image for a User", value="You can run the /customimagesadmin command to add, update, or remove a custom image associated with a user's account. You see more information in /helpcustomimages.", inline=False)
-                embed.add_field(name="Remove a User's Data", value="If you need to remove the data of any user in your server, you can do so with the '/removedatauseradmin' command. It will require two confirmations and the user's ID that you want to remove.", inline=False)
-                embed.add_field(name="Give Users Server Points", value="You can run the /serverpointsadmin command to add (or subtract by using a negative value) points to a user's account. You can use these however you want within your server.", inline=False)
-                embed.add_field(name="Give Users Server Money", value="By running the '/servermoneyadmin' command, you can add (or subtract using a negative value) to a user's account. Right now server money has no purpose.", inline=False)
-                embed.add_field(name="Update Server Information", value="You can update the moderation role and the logging channel by running the '/updateserveradmin' command. You will need the role and/or channel ID for this command. You don't have to update both at one time, putting '0' for an option will not update the role/channel.", inline=False)
-                embed.add_field(name="Removing the Bot and Data", value="To remove the bot and erase all user data, first have a user with the Bot Moderation Role run the '/removedataserveradmin' command and complete the three confirmations for removal. After a confirmation of data removal has been set to the Logging Channel, you can safely kick the bot from your server.", inline=False)
+                embed.add_field(name=":horse: Register a Horse for a User :horse:", value="You can run the /createaponyadmin command to register a horse for a user.", inline=False)
+                embed.add_field(name=":camera_with_flash: Set/Remove Custom Image for a User :camera_with_flash:", value="You can run the /customimagesadmin command to add or update a custom image associated with a user's account. The '/removeimagesadmin' command will erase all custom images for a user. You see more information in /helpcustomimages.\n", inline=False)
+                embed.add_field(name=":scissors: Remove a User's Data :scissors:", value="If you need to remove the data of any user in your server, you can do so with the '/removedatauseradmin' command. It will require two confirmations and the user's ID that you want to remove.\n", inline=False)
+                embed.add_field(name=":coin: Give Users Server Points :coin:", value="You can run the /serverpointsadmin command to add (or subtract by using a negative value) points to a user's account. You can use these however you want within your server.\n", inline=False)
+                embed.add_field(name=":dollar: Give Users Server Money :dollar:", value="By running the '/servermoneyadmin' command, you can add (or subtract using a negative value) to a user's account. Right now server money has no purpose.\n", inline=False)
+                embed.add_field(name=":books: Update Server Information :books:", value="You can update the moderation role and the logging channel by running the '/updateserveradmin' command. You will need the role and/or channel ID for this command. You don't have to update both at one time, putting '0' for an option will not update the role/channel.\n", inline=False)
+                embed.add_field(name=":wastebasket: Removing the Bot and Data :wastebasket:", value="To remove the bot and erase all user data, first have a user with the Bot Moderation Role run the '/removedataserveradmin' command and complete the three confirmations for removal. After a confirmation of data removal has been set to the Logging Channel, you can safely kick the bot from your server.\n", inline=False)
                 
                 embed.set_footer(text=BOT_CREDITS)
                 
@@ -514,12 +605,17 @@ async def admininformation(interaction: discord.Interaction):
 async def informationMessage(interaction: discord.Interaction):
     about_message = (
             f'You have the option to set your own custom images for your horse. To set a custom image for one of the interactions, use the \'/customimages\' command.'+
-            f'\n\nImages must be given in URL format. These urls must be the exact URL for just the image, not a webpage the image is on.'
+            f'\n\nImages must be given in URL format. These urls must be the exact URL for just the image, not a webpage the image is on.\n'
     )
+    
     updates_message = (       
-            f'To update an image, use the \'/customimages\' command like you did to set the original image.'
-            f'\nTo remove an image, use the \'/customimages\' command like you did to set the original image, but set the updated image url as `""`.'
+            f'To update an image, use the \'/customimages\' command like you did to set the original image.\n'
     )
+    
+    remove_message = (
+        f'To remove an image, user the \'/removeimages\' command. You only need to select an image type to remove.\n'
+    )
+
     image_message = ( 
             f'There are 7 different types of custom images you can set. For \'image_type\', enter one of the following options.'+
             f'\n0 - Standard reference image' + 
@@ -528,17 +624,18 @@ async def informationMessage(interaction: discord.Interaction):
             f'\n3 - Eating interaction image' + 
             f'\n4 - Drinking interaction image' + 
             f'\n5 - Brushing interaction image' + 
-            f'\n6 - Treat feeding interaction image' 
+            f'\n6 - Treat feeding interaction image\n' 
     )
     where_message = (
-        f'If you have set any custom image, they will completely override the use of the preset images. It is recommended to start with the standard reference image so that your checkin with your pony will have an image.'
+        f'If you have set any custom image, they will completely override the use of the preset images. It is recommended to start with the standard reference image so that your checkin with your pony will have an image.\n'
     )
 
     title = "Using Custom Images with StableCare"
     embed = discord.Embed(title= title, description=about_message, color= BOT_COLOR)
-    embed.add_field(name="Clearing or Updating Images", value=updates_message, inline=False)
-    embed.add_field(name="Custom Image Types", value=image_message, inline=False)
-    embed.add_field(name="Where did the check in picture go?", value=where_message, inline=False)
+    embed.add_field(name=":camera_with_flash: Updating Images :camera_with_flash:", value=updates_message, inline=False)
+    embed.add_field(name=":scissors: Removing Images :scissors:", value=remove_message, inline=False)
+    embed.add_field(name=":dividers: Custom Image Types :dividers:", value=image_message, inline=False)
+    embed.add_field(name=":question: Where did the check in picture go? :question:", value=where_message, inline=False)
     embed.set_footer(text=BOT_CREDITS)
     await interaction.response.send_message(embed=embed) 
 
@@ -546,11 +643,10 @@ async def informationMessage(interaction: discord.Interaction):
 ###########################################################################################################
 ################################# BUILD THE BOT - BOT SET UP AND UPDATING #################################
 @client.tree.command(name="setup", description="Admin - Set up the StableCare bot for your server!", guild=GUILD_ID)
+@app_commands.checks.has_permissions(administrator = True)
 async def setupStableCare(interaction: discord.Interaction, moderation_role_id: str, logging_channel_id: str):
-    log_channel = client.get_channel(BOT_LOGGING_CHANNEL)
     server_id = interaction.guild_id
     server_name = interaction.guild.name
-    server_owner = ""
     user_name = interaction.user.display_name
 
     bot_moderation_role_id = int(moderation_role_id)
@@ -561,7 +657,7 @@ async def setupStableCare(interaction: discord.Interaction, moderation_role_id: 
     server_data = await Client.get_server_data(server_id)
 
     if server_data:
-        log_channel = client.get_channel(server_data[5])
+        log_channel = client.get_channel(server_data[4])
         await log_channel.send(f'{user_name} attempted to run the setup command for this bot... but we are already set up in this server. :horse: :heart:')
         await interaction.response.send_message(f'This bot is already set up in this server. You don\'t have to set it up again.', ephemeral = True)
 
@@ -569,17 +665,30 @@ async def setupStableCare(interaction: discord.Interaction, moderation_role_id: 
         try:
             conn = connect_db() 
             cursor = conn.cursor()
-            QUERY = (f"INSERT INTO server_data VALUES ({server_id}, \"{server_name}\", \"{server_owner}\", \"{user_name}\", {bot_moderation_role_id}, {bot_logging_channel_id})")
+            QUERY = (f"INSERT INTO server_data VALUES ({server_id}, \"{server_name}\", \"{user_name}\", {bot_moderation_role_id}, {bot_logging_channel_id})")
             print(f'Query = {QUERY}')
             cursor.execute(QUERY)
             conn.commit()
-            await log_channel.send(f'{user_name} set up the StableCare bot for this server. Find out about the admin commands in \'/informationadmin\'')
+            await interaction.response.send_message(f'Thank you for setting up the StableCare bot for this server. Your memebers can now use the \'/createapony\' command to get a horse!')
+            await log_channel.send(f'{user_name} set up the StableCare bot for this server. Find out about the admin commands in \'/helpinformationadmin\'')
             
         except mysql.connector.Error as e:
             print(f'{user_name} had issues setting up the bot in {server_name} - {server_id}: {e}') 
             await log_channel.send(f'An error occurred while attempting to set up the bot. If this happens twice, please contact kyraltre.')
 
         conn.close()
+
+@setupStableCare.error
+async def setupErorr(interaction: discord.Interaction, error):
+    server_id = interaction.guild_id
+    server_data = await Client.get_server_data(server_id)
+
+    if server_data:
+        log_channel = client.get_channel(server_data[4])
+        log_channel.send(f'{interaction.user.display_name} attempted to run the Setup command for this server.')
+
+    message = f'Sorry, this command has to be run by a server admistrator.' 
+    await interaction.response.send_message(message)
 
 ### help command for how to set up the bot
 @client.tree.command(name="helpsetup", description="How to set up the bot for your server", guild=GUILD_ID)
@@ -612,29 +721,39 @@ async def updateServer(interaction: discord.Interaction, moderation_role_id: str
 
     if server_data:
         for role in user_roles:
-            if role.id == server_data[4]:
+            if role.id == server_data[3]:
                 admin_found = True
-                log_channel = client.get_channel(server_data[5])
+                log_channel = client.get_channel(server_data[4])
                 log = False
                 mod = False
 
-                if bot_logging_channel_id > 0:
-                    log = True
-                    new_log_channel = client.get_channel(bot_logging_channel_id)
-                    await log_channel.send(f'{user_name} ran the server update command - The logging channel was changed, this will be the last log message sent in this channel.')
-                    await new_log_channel.send(f'{user_name} ran the server update command. This is the new logging channel for this bot.')
-                    await interaction.response.send_message(f'The server logging channel has been updated.', ephemeral = True)
-                
+                log_message = f'Update server information command has been run.'
+
                 if bot_moderation_role_id > 0:
                     mod = True
+                    result = await Client.update_server_data(server_id, "admin_role_id", bot_moderation_role_id)
                     role_name = interaction.guild.get_role(bot_moderation_role_id)
-                    await log_channel.send(f'{user_name} ran the server update command - The moderation role has been updated to {role_name}.')
-                    await interaction.response.send_message(f'Nothing was changed by your request.', ephemeral = True)
+                    if result:
+                        log_message += (f'\n{user_name} ran the server update command - The moderation role has been updated to {role_name}.')
+                    else:
+                        log_message += (f'\n{user_name} ATTEMPTED to update the server\'s bot admin role to the {role_name}, but something went wrong. If this issue repeats, please contact kyraltre.')
+
+                if bot_logging_channel_id > 0:
+                    log = True
+                    result = await Client.update_server_data(server_id, "log_channel", bot_logging_channel_id)
+                    new_log_channel = client.get_channel(bot_logging_channel_id)
+                    if result:
+                        log_message += (f'\n{user_name} ran the server update command - The logging channel was changed, this will be the last log message sent in this channel.')
+                        await new_log_channel.send(f'{user_name} ran the server update command. This is the new logging channel for this bot.')
+                    else:
+                        log_message += (f'\n{user_name} ATTEMPTED to update the server\'s bot logging channel, but something went wrong. If this issue repeats, please contact kyraltre.')
                 
                 if log == False and mod == False:
-                    await log_channel.send(f'{user_name} ran the server update command - Nothing was changed.')
-                    await interaction.response.send_message(f'Nothing was changed by your request.', ephemeral = True)             
-        
+                    log_message += (f'\n{user_name} ran the server update command - Nothing was changed.')          
+
+                await log_channel.send(log_message)
+
+
         if not admin_found:
             await log_channel.send(f'{user_name} attempted to update the server settings for this bot.')
             await interaction.response.send_message(f'This command needs to be run by a StableCare Barn Manager. Sorry about that!', ephemeral = True)
@@ -654,8 +773,8 @@ async def removeUserData(interaction: discord.Interaction, confirmation_to_remov
 
     server_id = interaction.guild.id
     server_data = await Client.get_server_data(server_id)
-    horse_data = await Client.update_horse_data(user_id)
-    log_channel = client.get_channel(server_data[5])
+    horse_data = await Client.gather_all_horse_data(user_id, server_id)
+    log_channel = client.get_channel(server_data[4])
 
     if server_data:
         if horse_data:
@@ -688,20 +807,24 @@ async def removeUserData(interaction: discord.Interaction, confirmation_to_remov
 
 ### remove a user's data - admin command
 @client.tree.command(name="removedatauseradmin", description="Admin - remove data for a user from this bot that is connected to this server.", guild=GUILD_ID)
-async def removeUserDataAdmin(interaction: discord.Interaction, confirmation_to_remove_data: str, user_to_remove_id: int, confirmation_server_id: int):
+async def removeUserDataAdmin(interaction: discord.Interaction, confirmation_to_remove_data: str, user_id_to_remove: str, confirm_server_id: str):
     server_id = interaction.guild.id
     server_name = interaction.guild.name
-    user_name = interaction.guild.get_member(user_to_remove_id)
+
+    confirmation_server_id = int(confirm_server_id)
+    user_id = int(user_id_to_remove)
+
+    user_name = interaction.guild.get_member(user_id)
     admin_name = interaction.user.display_name
     user_roles = interaction.user.roles
 
     server_data = await Client.get_server_data(server_id)
-    log_channel = client.get_channel(server_data[5])
+    log_channel = client.get_channel(server_data[4])
     admin_found = False
 
     if server_data:
         for role in user_roles:
-            if role.id == server_data[4]:
+            if role.id == server_data[3]:
                 admin_found = True
                 if confirmation_to_remove_data == "YES":
                     if confirmation_server_id == server_id:
@@ -709,11 +832,11 @@ async def removeUserDataAdmin(interaction: discord.Interaction, confirmation_to_
                             conn = connect_db()
                             cursor = conn.cursor()
                             
-                            QUERY_HORSE = (f'DELETE FROM horse_information WHERE user_id = {user_to_remove_id} AND server_id = {server_id}')
+                            QUERY_HORSE = (f'DELETE FROM horse_information WHERE user_id = {user_id} AND server_id = {server_id}')
                             cursor.execute(QUERY_HORSE)
                             conn.commit()
                             conn.close()
-                            print(f'Successfully deleted {user_name}\'s data from the {server_name} server ({server_id} -- Request completed by {admin_name} - {user_id})')
+                            print(f'Successfully deleted {user_name}\'s data from the {server_name} server ({server_id}) -- Request completed by {admin_name} - {interaction.user.id}')
                             await interaction.response.send_message(f'All data for {user_name} related to this server has been removed from the bot.', ephemeral = True)
                             await log_channel.send(f'{admin_name} has removed {user_name}\'s data related to this server from the bot.')
                         
@@ -736,20 +859,23 @@ async def removeUserDataAdmin(interaction: discord.Interaction, confirmation_to_
 
 ### remove all data for a server
 @client.tree.command(name="removedataserveradmin", description="Admin - Removes ALL data for ALL USERS from this bot that is connected to this server.", guild=GUILD_ID)
-async def removeServerData(interaction: discord.Interaction, confirmation_to_remove_data: str, confirmation_your_user_id: int, confirmation_server_id: int):
+async def removeServerData(interaction: discord.Interaction, confirmation_to_remove_data: str, confirm_your_user_id: str, confirm_server_id: str):
     server_id = interaction.guild.id
     server_name = interaction.guild.name
     user_id = interaction.user.id
     user_name = interaction.user.display_name
     user_roles = interaction.user.roles
 
+    confirmation_your_user_id = int(confirm_your_user_id) 
+    confirmation_server_id = int(confirm_server_id)
+
     server_data = await Client.get_server_data(server_id)
-    log_channel = client.get_channel(server_data[5])
+    log_channel = client.get_channel(server_data[4])
     admin_found = False
 
     if server_data:
         for role in user_roles:
-            if role.id == server_data[4]:
+            if role.id == server_data[3]:
                 admin_found = True
                 if confirmation_to_remove_data == "YES":
                     if confirmation_your_user_id == user_id:
@@ -801,8 +927,8 @@ async def setCustomImage(interaction: discord.Interaction, image_type: int, imag
 
     server_id = interaction.guild.id
     server_data = await Client.get_server_data(server_id)
-    horse_data = await Client.update_horse_data(user_id)
-    log_channel = client.get_channel(server_data[5])
+    horse_data = await Client.gather_all_horse_data(user_id, server_id)
+    log_channel = client.get_channel(server_data[4])
 
     image_name = ""
 
@@ -850,16 +976,78 @@ async def setCustomImage(interaction: discord.Interaction, image_type: int, imag
 
 ###admin version of set custom images
 @client.tree.command(name="customimagesadmin", description="Admin - Set a custom image for another user", guild=GUILD_ID)
-async def setCustomImageAdmin(interaction: discord.Interaction, user_id: int, image_type: int, image_url: str):
+async def setCustomImageAdmin(interaction: discord.Interaction, updating_user_id: str, image_type: int, image_url: str):
     server_id = interaction.guild.id
     server_name = interaction.guild.name
+    user_id = int(updating_user_id)
+
     user_name = interaction.guild.get_member(user_id)
     admin_name = interaction.user.display_name
     user_roles = interaction.user.roles
 
     server_data = await Client.get_server_data(server_id)
-    log_channel = client.get_channel(server_data[5])
+    log_channel = client.get_channel(server_data[4])
     admin_found = False
+
+    image_name = "a"
+
+    match image_type:
+            case 0:
+                image_name = "standard reference image"
+            case 1:
+                image_name = "happy reference image"
+            case 2:
+                image_name = "sad reference image"
+            case 3:
+                image_name = "eating interaction image"
+            case 4:
+                image_name = "drinking interaction image"
+            case 5:
+                image_name = "brushing interaction image"
+            case 6:
+                image_name = "treat interaction image"
+
+    if server_data:
+        for role in user_roles:
+            if role.id == server_data[3]:
+                admin_found = True
+                if not(image_name == ""):
+                    results = await Client.set_custom_image(user_id, server_id, image_type, image_url)
+
+                    if results:
+                        if image_url == "":
+                            await interaction.response.send_message(f'{user_name}\'s {image_name} has been cleared.', ephemeral = True)
+                            await log_channel.send(f'{admin_name} has removed a custom image from {user_name}\'s horse.')
+                    
+                        else:
+                            await interaction.response.send_message(f'{user_name}\'s {image_name} has been updated.', ephemeral = True)
+                            await log_channel.send(f'{admin_name} has added a custom image to {user_name}\'s horse.')
+                
+                    else:
+                        print(f'An error occurred while trying to update an image for {user_name} in the {server_name} server ({server_id}): {e}')
+                        await log_channel.send(f'An error has occurred while {admin_name} was attempting to update an image for {user_name} for this server. If this repeats, please contact kyraltre.')
+                        await interaction.response.send_message(f'An error occurred while trying to update custom images for {user_name}. If this issue repeats, please contact kyraltre. Thank you.', ephemeral = True)
+
+                else:
+                    await interaction.response.send_message(f'Please select an appropriate image type. See /helpcustomimages for assistance.', ephemeral = True)
+                        
+        if not admin_found:
+            await log_channel.send(f'{admin_name} attempted to update a custom image for {user_name} . Request denied due to not having bot moderator role.')
+            await interaction.response.send_message(f'Request denied. You don\'t have the appropriate role to run this command.', ephemeral = True)
+    else:
+        await interaction.response.send_message(NO_SERVER_ERROR_MESSAGE, ephemeral = True)
+
+### user remove custom image
+@client.tree.command(name="removeimages", description="REMOVE a custom image for your horse. See /helpcustomimages for assistance.", guild=GUILD_ID)
+async def setCustomImage(interaction: discord.Interaction, image_type: int):
+    server_id = interaction.guild.id
+    user_id = interaction.user.id
+    user_name = interaction.user.display_name
+
+    server_id = interaction.guild.id
+    server_data = await Client.get_server_data(server_id)
+    horse_data = await Client.gather_all_horse_data(user_id, server_id)
+    log_channel = client.get_channel(server_data[4])
 
     image_name = ""
 
@@ -880,34 +1068,67 @@ async def setCustomImageAdmin(interaction: discord.Interaction, user_id: int, im
                 image_name = "treat interaction image"
 
     if server_data:
-        for role in user_roles:
-            if role.id == server_data[4]:
-                admin_found = True
-                if not(image_name == ""):
-                    results = await Client.set_custom_image(user_id, server_id, image_type, image_url)
+        if horse_data:
+            if not(image_name == ""):
+                results = await Client.remove_custom_image(user_id, server_id, image_type)
 
-                    if results:
-                        if image_url == "":
-                            await interaction.response.send_message(f'{user_name}\'s {image_name} has been cleared.', ephemeral = True)
-                            await log_channel.send(f'{admin_name} has removed a custom image from {user_name}\'s horse.')
-                    
-                        else:
-                            await interaction.response.send_message(f'{user_name}\'s {image_name} has been updated.', ephemeral = True)
-                            await log_channel.send(f'{admin_name} has added a custom image to {user_name}\'s horse.')
+                if results:
+                    await interaction.response.send_message(f'{horse_data[2]}\'s {image_name} has been cleared.', ephemeral = True)
+                    await log_channel.send(f'{user_name} has removed a custom image from their horse.')
                 
                 else:
-                    print(f'An error occurred while trying to update an image for {user_name} in the {server_name} server ({server_id}): {e}')
-                    await log_channel.send(f'An error has occurred while {admin_name} was attempting to update an image for {user_name} for this server. If this repeats, please contact kyraltre.')
-                    await interaction.response.send_message(f'An error occurred while trying to update custom images for {user_name}. If this issue repeats, please contact kyraltre. Thank you.', ephemeral = True)
+                    print(f'An error occurred while trying to remove an image for {user_name} in the {interaction.guild.name} server ({server_id}): {e}')
+                    await log_channel.send(f'An error has occurred while attempting to remove an image for {user_name} for this server. If this repeats, please contact kyraltre.')
+                    await interaction.response.send_message(f'An error occurred while trying to remove custom images for you. If this issue repeats, please contact kyraltre. Thank you.', ephemeral = True)
 
             else:
                 await interaction.response.send_message(f'Please select an appropriate image type. See /helpcustomimages for assistance.', ephemeral = True)
+        else:
+            await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral = True)
+    else:
+        await interaction.response.send_message(NO_SERVER_ERROR_MESSAGE, ephemeral = True)
+
+###admin version of remove custom images
+@client.tree.command(name="removeimagesadmin", description="Admin - REMOVE ALL custom images for another user", guild=GUILD_ID)
+async def setCustomImageAdmin(interaction: discord.Interaction, updating_user_id: str):
+    server_id = interaction.guild.id
+    server_name = interaction.guild.name
+    user_id = int(updating_user_id)
+
+    user_name = interaction.guild.get_member(user_id)
+    admin_name = interaction.user.display_name
+    user_roles = interaction.user.roles
+
+    server_data = await Client.get_server_data(server_id)
+    log_channel = client.get_channel(server_data[4])
+    admin_found = False
+
+    if server_data:
+        for role in user_roles:
+            if role.id == server_data[3]:
+                admin_found = True
+                total = 0
+                for image in range(0,7):
+                    results = await Client.remove_custom_image(user_id, server_id, image)
+                    if results:
+                        total +=1
+                            
+                if total == 7:
+                    await interaction.response.send_message(f'ALL of {user_name}\'s custom images have been removed.', ephemeral = True)
+                    await log_channel.send(f'{admin_name} has has removed ALL custom images belonging to {user_name}\'s horse.')
+                else:
+                    print(f'An error occurred while trying remove all images for {user_name} in the {server_name} server ({server_id}): {e}')
+                    await log_channel.send(f'An error has occurred while {admin_name} was attempting to remove all images for {user_name} for this server. Only {total} out of a possible 7 images have been cleared. If this repeats, please contact kyraltre.')
+                    await interaction.response.send_message(f'An error occurred while trying to remove all custom images for {user_name}. Only {total} out of a possible 7 images have been cleared. If this issue repeats, please contact kyraltre. Thank you.', ephemeral = True)
+
+                
                         
         if not admin_found:
             await log_channel.send(f'{admin_name} attempted to update a custom image for {user_name} . Request denied due to not having bot moderator role.')
             await interaction.response.send_message(f'Request denied. You don\'t have the appropriate role to run this command.', ephemeral = True)
     else:
         await interaction.response.send_message(NO_SERVER_ERROR_MESSAGE, ephemeral = True)
+
 
 #############################################################################################
 ################################# Point assignment commands #################################
@@ -935,33 +1156,34 @@ async def harpgPoints(interaction: discord.Interaction, points_to_add: int):
 
 ### admin to add server specific points
 @client.tree.command(name="serverpointsadmin", description="Admin - Add server points to a user's horse. A negative value will subtract points.", guild=GUILD_ID)
-async def serverPoints(interaction: discord.Interaction, user_id: int, points_to_add: int):
+async def serverPoints(interaction: discord.Interaction, updating_user_id: int, points_to_add: int):
     server_id = interaction.guild.id
+    user_id = int(updating_user_id)
     user_name = interaction.guild.get_member(user_id)
     admin_name = interaction.user.display_name
     user_roles = interaction.user.roles
 
     horse_data = await Client.gather_all_horse_data(user_id, server_id)
     server_data = await Client.get_server_data(server_id)
-    log_channel = client.get_channel(server_data[5])
+    log_channel = client.get_channel(server_data[4])
     admin_found = False
     message = ""
     log_message = ""
 
     if server_data:
         for role in user_roles:
-            if role.id == server_data[4]:
+            if role.id == server_data[3]:
                 admin_found = True
                 if horse_data:
                     result = await Client.update_user_points(user_id, server_id, "server", points_to_add)
                     if result:
                         horse_data = await Client.gather_all_horse_data(user_id, server_id)
                         message = f'{horse_data[2]}, {user_name}\'s horse, server point total is now {horse_data[11]}'
-                        log_message = f'{interaction.user.display_name}, added {points_to_add} server points to {user_name}\'s horse.'
+                        log_message = f'{admin_name}, added {points_to_add} server points to {user_name}\'s horse.'
 
                     else:
                         message = f'An error occurred while trying to update {user_name}\'s server points for {horse_data[2]}. If this error repeats, please contact kyraltre.'
-                        log_message = f'{interaction.user.display_name} ATTEMPTED to add {points_to_add} server points to {user_name}\'s horse but an error occurred.'
+                        log_message = f'{admin_name} ATTEMPTED to add {points_to_add} server points to {user_name}\'s horse but an error occurred.'
                     
                     await log_channel.send(log_message)
                     await interaction.response.send_message(message, ephemeral = True)
@@ -973,33 +1195,34 @@ async def serverPoints(interaction: discord.Interaction, user_id: int, points_to
 
 ### admin to add money to a user
 @client.tree.command(name="servermoneyadmin", description="Admin - Add money to a user's account. A negative value will subtract money.", guild=GUILD_ID)
-async def serverMoney(interaction: discord.Interaction, user_id: int, money_to_add: int):
+async def serverMoney(interaction: discord.Interaction, updating_user_id: int, money_to_add: int):
     server_id = interaction.guild.id
+    user_id = int(updating_user_id)
     user_name = interaction.guild.get_member(user_id)
     admin_name = interaction.user.display_name
     user_roles = interaction.user.roles
 
     horse_data = await Client.gather_all_horse_data(user_id, server_id)
     server_data = await Client.get_server_data(server_id)
-    log_channel = client.get_channel(server_data[5])
+    log_channel = client.get_channel(server_data[4])
     admin_found = False
     message = ""
     log_message = ""
 
     if server_data:
         for role in user_roles:
-            if role.id == server_data[4]:
+            if role.id == server_data[3]:
                 admin_found = True
                 if horse_data:
                     result = await Client.update_user_points(user_id, server_id, money_to_add)
                     if result:
                         horse_data = await Client.gather_all_horse_data(user_id, server_id)
                         message = f'{user_name}\'s account now has ${horse_data[9]}'
-                        log_message = f'{interaction.user.display_name}, added ${money_to_add} to {user_name}\'s account.'
+                        log_message = f'{admin_name}, added ${money_to_add} to {user_name}\'s account.'
 
                     else:
                         message = f'An error occurred while trying to update {user_name}\'s money for {horse_data[2]}. If this error repeats, please contact kyraltre.'
-                        log_message = f'{interaction.user.display_name} ATTEMPTED to add ${money_to_add} to {user_name}\'s account but an error occurred.'
+                        log_message = f'{admin_name} ATTEMPTED to add ${money_to_add} to {user_name}\'s account but an error occurred.'
                     
                     await log_channel.send(log_message)
                     await interaction.response.send_message(message, ephemeral = True)
@@ -1020,18 +1243,22 @@ async def leaderboard(interaction: discord.Interaction, leaderboard_type: int):
         case 0:
             board = "bot"
             title = f':trophy: {interaction.guild.name}\'s Care Points Leaderboard :trophy:'
+            message = f'These points are earned through caring for your pony!\n\n'
         case 1:
             board = "server"
             title = f':trophy: {interaction.guild.name}\'s Server Points Leaderboard :trophy:'
+            message = f'These points are given out by your server\'s moderation team!\n\n'
         case _:
             await interaction.response.send_message(f'Please select a leaderboard type - 0 for Care Points, 1 for Server Points', ephemeral = True)
     if not(board == ""):
         leaders = await Client.get_leaderboard(server_id, board)
         
         if leaders:
-            #for L in leaders:
-            #    message += f'{leaders[L],[0]} and {leaders[L],[1]} - {leaders[L],[2]} pts\n' 
-            message = str(leaders)
+            placement = 1
+            for L in leaders:
+                message += f'{placement}. {L[0]} and {L[1]} - {L[2]} pts\n' 
+                placement += 1
+            
 
             embed = discord.Embed(title=title, description=message, color=BOT_COLOR)
             embed.set_footer(text=BOT_CREDITS)
@@ -1057,7 +1284,7 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
     server_data = await Client.get_server_data(server_id)
     
     if server_data:
-        log_channel = client.get_channel(server_data[5])
+        log_channel = client.get_channel(server_data[4])
         if pony_gender > 2 or pony_gender < 0:
             await interaction.response.send_message(f'Please try again and properly select a gender for your pony (0-2)', ephemeral = True)
         else:
@@ -1081,7 +1308,7 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
                 # Insert user data into the database
                 #await interaction.response.send_message("The SQL server does not have a horse registered to you.")
                 try:
-                    QUERY = (f"INSERT INTO horse_information VALUES ({user_id}, {server_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 10, 10, 10, 10, 30, 0, 0, 0, {coat}, 0, \"\", \"\", \"\", \"\", \"\", \"\", \"\" )")
+                    QUERY = (f"INSERT INTO horse_information VALUES ({user_id}, {server_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 7, 7, 7, 7, 30, 10, 0, 0, {coat}, 0, \"\", \"\", \"\", \"\", \"\", \"\", \"\" )")
                     cursor.execute(QUERY)
                     conn.commit() #commits the information above to the database to save the addition of information
                     print(f'A new {coat_values[1]} horse named, {pony_name}, has been registered to {user_name}.')
@@ -1105,22 +1332,23 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
 
 ##SET UP A HORSE - ADMIN FOR ANOTHER USER
 @client.tree.command(name="createponyadmin", description="Admin - Pony Set Up | Unique Discord User ID needed | Gender: 0-M 1-S 2-G", guild=GUILD_ID)
-async def createAPonyADMIN(interaction: discord.Interaction, user_id: int, user_name: str, pony_name: str, pony_gender : int):
+async def createAPonyADMIN(interaction: discord.Interaction, updating_user_id: str, user_name: str, pony_name: str, pony_gender : int):
     server_id = interaction.guild.id
     server_data = await Client.get_server_data(server_id)
     user_roles = interaction.user.roles
+    user_id = int(updating_user_id)
     admin_found = False
 
     if server_data:
-        log_channel = client.get_channel(server_data[5])
+        log_channel = client.get_channel(server_data[4])
         for role in user_roles:
-            if role.id == server_data[4]:
+            if role.id == server_data[3]:
                 admin_found = True
                 print(f'{interaction.user.display_name} ran the admin create a pony command.')
                 if pony_gender > 2 or pony_gender < 0:
                     await interaction.response.send_message(f'Please try again and properly select a gender for their pony (0-2)')
                 else:
-                    coat = random.randrange(0, 6)
+                    coat = random.randrange(1, 7)
 
                     conn = connect_db() 
                     cursor = conn.cursor() 
@@ -1133,7 +1361,7 @@ async def createAPonyADMIN(interaction: discord.Interaction, user_id: int, user_
                         await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command - unsucessful - {user_name} already had a horse')
                     else:
                         try:
-                            QUERY = (f"INSERT INTO horse_information VALUES ({user_id}, {server_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 10, 10, 10, 10, 30, 0, 0, 0, {coat}, 0, \"\", \"\", \"\", \"\", \"\", \"\", \"\" )")
+                            QUERY = (f"INSERT INTO horse_information VALUES ({user_id}, {server_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 7, 7, 7, 7, 30, 10, 0, 0, {coat}, 0, \"\", \"\", \"\", \"\", \"\", \"\", \"\" )")
                             cursor.execute(QUERY)
                             conn.commit() 
                             await interaction.response.send_message(f'{pony_name} has been registered to {user_name}')
@@ -1247,7 +1475,6 @@ async def treatSnacking(interaction: discord.Interaction, treat_type: str):
 
 @client.tree.command(name="feed", description="Feed your pony. Type in whatever hay type and pounds you want to feed your pony", guild=GUILD_ID)
 async def foodTime(interaction: discord.Interaction, feed_type: str, feed_amount: int):
-    #log_channel = client.get_channel(BOT_LOGGING_CHANNEL)
     user_id = interaction.user.id
     server_id = interaction.guild.id
     horse_data = await Client.gather_all_horse_data(user_id, server_id)
