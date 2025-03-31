@@ -297,9 +297,9 @@ class Client(commands.Bot):
             case 0:
                 data_column = "stand_ref_image"
             case 1:
-                data_column = "happy_ref_image"
+                data_column = "happy_ref_img"
             case 2:
-                data_column = "sad_ref_image"
+                data_column = "sad_ref_img"
             case 3:
                 data_column = "feed_img"
             case 4:
@@ -348,10 +348,10 @@ class Client(commands.Bot):
                 data_column = "stand_ref_image"
                 array_value = 15 
             case 1:
-                data_column = "happy_ref_image"
+                data_column = "happy_ref_img"
                 array_value = 16
             case 2:
-                data_column = "sad_ref_image"
+                data_column = "sad_ref_img"
                 array_value = 17
             case 3:
                 data_column = "feed_img"
