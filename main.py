@@ -2,7 +2,6 @@ import discord.member
 import numpy as np
 import mysql.connector
 import random
-from typing import Any
 import discord
 from discord.ext import commands
 from discord.ext import tasks
@@ -19,7 +18,8 @@ BOT_CREDITS = f'This bot was made in collaboration between kyraltre and MoonFlow
 def connect_db():
     return mysql.connector.connect(
         #Database Values
-              
+        
+             
     )
 
 #############################################################################
@@ -414,8 +414,8 @@ class Client(commands.Bot):
                 return False
 
 ####################################################################################################
-################################# UPDATE HORSE STATS EVERY 12 HOURS #################################
-    @tasks.loop(hours=12)
+################################# UPDATE HORSE STATS EVERY 6 HOURS #################################
+    @tasks.loop(hours=6)
     async def stats_update(self):
         result = await Client.daily_horse_update()
         message = ""
@@ -449,27 +449,7 @@ GUILD_ID = discord.Object(id=SERVER)
 ##################################################################################
 # this is for slash commands, names of commands have to be lower case
 # descriptions can have upper case
-""" #demo for how to build an embed
-@client.tree.command(name="embed", description="Demo for embed messages", guild=GUILD_ID)
-async def embedDemo(interaction: discord.Interaction): 
-    embed = discord.Embed(title="I am a title", url="https://www.google.com", description="I am a description")
-    #url will turn the title to a link
-    #color can be any value so long as you specify it (RGB/HEX/etc) - currently using the preset colors from discord.py
 
-    embed.set_thumbnail(url="http://images-wixmp-ed30a86b8c4ca887773594c2.wixmp.com/f/00cbf0f6-e2a4-4246-8615-24f03ef477c3/df8bk75-38c1d630-471c-425c-bd0e-9c84887e0641.png/v1/fill/w_1280,h_905,q_80,strp/first_touches_by_kyraltre3_df8bk75-fullview.jpg?token=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1cm46YXBwOjdlMGQxODg5ODIyNjQzNzNhNWYwZDQxNWVhMGQyNmUwIiwiaXNzIjoidXJuOmFwcDo3ZTBkMTg4OTgyMjY0MzczYTVmMGQ0MTVlYTBkMjZlMCIsIm9iaiI6W1t7ImhlaWdodCI6Ijw9OTA1IiwicGF0aCI6IlwvZlwvMDBjYmYwZjYtZTJhNC00MjQ2LTg2MTUtMjRmMDNlZjQ3N2MzXC9kZjhiazc1LTM4YzFkNjMwLTQ3MWMtNDI1Yy1iZDBlLTljODQ4ODdlMDY0MS5wbmciLCJ3aWR0aCI6Ijw9MTI4MCJ9XV0sImF1ZCI6WyJ1cm46c2VydmljZTppbWFnZS5vcGVyYXRpb25zIl19.1H8DDpq95SYgIVWZqdh8VZjXPDuKkolvlIkKuNY6yDM")
-    
-    #unlimted fields can be added (aparently, dont overdo it tho lol)
-    embed.add_field(name="This is a field", value="This is text associated with field 1", inline=False) 
-    #inline isn't required but is true by default, so the two fields below will be shown side by side while the one above is by itself.
-    embed.add_field(name="This is a field (2)", value="This is text associated with field 2")
-    embed.add_field(name="This is a field (3)", value="This is text associated with field 3")
-
-    embed.set_footer(text="I am smol text at the bottom of the embed!")
-    embed.set_author(name=interaction.user.name, url="https://www.google.com", icon_url="https://www.image.com")
-    #the embed author can be set with this method and it currently shows as the person that sent the command. 
-    #the author text can be made into a url and the icon image set in this method as seen above. 
-
-    await interaction.response.send_message(embed=embed) #send the embed! """
 
 ########################################################################################
 ################################# INFORMATION COMMANDS #################################
@@ -963,7 +943,7 @@ async def setCustomImage(interaction: discord.Interaction, image_type: int, imag
                         await log_channel.send(f'{user_name} has added a custom image to their horse.')
                 
                 else:
-                    print(f'An error occurred while trying to update an image for {user_name} in the {interaction.guild.name} server ({server_id}): {e}')
+                    print(f'An error occurred while trying to update an image for {user_name} in the {interaction.guild.name} server ({server_id})')
                     await log_channel.send(f'An error has occurred while attempting to update an image for {user_name} for this server. If this repeats, please contact kyraltre.')
                     await interaction.response.send_message(f'An error occurred while trying to update custom images for you. If this issue repeats, please contact kyraltre. Thank you.', ephemeral = True)
 
@@ -1024,7 +1004,7 @@ async def setCustomImageAdmin(interaction: discord.Interaction, updating_user_id
                             await log_channel.send(f'{admin_name} has added a custom image to {user_name}\'s horse.')
                 
                     else:
-                        print(f'An error occurred while trying to update an image for {user_name} in the {server_name} server ({server_id}): {e}')
+                        print(f'An error occurred while trying to update an image for {user_name} in the {server_name} server ({server_id})')
                         await log_channel.send(f'An error has occurred while {admin_name} was attempting to update an image for {user_name} for this server. If this repeats, please contact kyraltre.')
                         await interaction.response.send_message(f'An error occurred while trying to update custom images for {user_name}. If this issue repeats, please contact kyraltre. Thank you.', ephemeral = True)
 
@@ -1077,7 +1057,7 @@ async def setCustomImage(interaction: discord.Interaction, image_type: int):
                     await log_channel.send(f'{user_name} has removed a custom image from their horse.')
                 
                 else:
-                    print(f'An error occurred while trying to remove an image for {user_name} in the {interaction.guild.name} server ({server_id}): {e}')
+                    print(f'An error occurred while trying to remove an image for {user_name} in the {interaction.guild.name} server ({server_id})')
                     await log_channel.send(f'An error has occurred while attempting to remove an image for {user_name} for this server. If this repeats, please contact kyraltre.')
                     await interaction.response.send_message(f'An error occurred while trying to remove custom images for you. If this issue repeats, please contact kyraltre. Thank you.', ephemeral = True)
 
@@ -1117,7 +1097,7 @@ async def setCustomImageAdmin(interaction: discord.Interaction, updating_user_id
                     await interaction.response.send_message(f'ALL of {user_name}\'s custom images have been removed.', ephemeral = True)
                     await log_channel.send(f'{admin_name} has has removed ALL custom images belonging to {user_name}\'s horse.')
                 else:
-                    print(f'An error occurred while trying remove all images for {user_name} in the {server_name} server ({server_id}): {e}')
+                    print(f'An error occurred while trying remove all images for {user_name} in the {server_name} server ({server_id})')
                     await log_channel.send(f'An error has occurred while {admin_name} was attempting to remove all images for {user_name} for this server. Only {total} out of a possible 7 images have been cleared. If this repeats, please contact kyraltre.')
                     await interaction.response.send_message(f'An error occurred while trying to remove all custom images for {user_name}. Only {total} out of a possible 7 images have been cleared. If this issue repeats, please contact kyraltre. Thank you.', ephemeral = True)
 
@@ -1156,7 +1136,7 @@ async def harpgPoints(interaction: discord.Interaction, points_to_add: int):
 
 ### admin to add server specific points
 @client.tree.command(name="serverpointsadmin", description="Admin - Add server points to a user's horse. A negative value will subtract points.", guild=GUILD_ID)
-async def serverPoints(interaction: discord.Interaction, updating_user_id: int, points_to_add: int):
+async def serverPoints(interaction: discord.Interaction, updating_user_id: str, points_to_add: int):
     server_id = interaction.guild.id
     user_id = int(updating_user_id)
     user_name = interaction.guild.get_member(user_id)
@@ -1195,7 +1175,7 @@ async def serverPoints(interaction: discord.Interaction, updating_user_id: int, 
 
 ### admin to add money to a user
 @client.tree.command(name="servermoneyadmin", description="Admin - Add money to a user's account. A negative value will subtract money.", guild=GUILD_ID)
-async def serverMoney(interaction: discord.Interaction, updating_user_id: int, money_to_add: int):
+async def serverMoney(interaction: discord.Interaction, updating_user_id: str, money_to_add: int):
     server_id = interaction.guild.id
     user_id = int(updating_user_id)
     user_name = interaction.guild.get_member(user_id)
@@ -1308,7 +1288,10 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
                 # Insert user data into the database
                 #await interaction.response.send_message("The SQL server does not have a horse registered to you.")
                 try:
-                    QUERY = (f"INSERT INTO horse_information VALUES ({user_id}, {server_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 7, 7, 7, 7, 30, 10, 0, 0, {coat}, 0, \"\", \"\", \"\", \"\", \"\", \"\", \"\" )")
+                    QUERY = (
+                        f'INSERT INTO horse_information (user_id, server_id, user_name, horse_name, gender, health, hunger, thirst, clean, money, bot_pts, server_pts, harpg_pts, coat, custom_thumb, stand_ref_image, happy_ref_img, sad_ref_img, feed_img, water_img, brush_img, treat_img, serial) '
+                      + f'VALUES ({user_id}, {server_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 7, 7, 7, 7, 30, 10, 0, 0, {coat}, 0, \"\", \"\", \"\", \"\", \"\", \"\", \"\", DEFAULT)' 
+                    )
                     cursor.execute(QUERY)
                     conn.commit() #commits the information above to the database to save the addition of information
                     print(f'A new {coat_values[1]} horse named, {pony_name}, has been registered to {user_name}.')
@@ -1361,7 +1344,10 @@ async def createAPonyADMIN(interaction: discord.Interaction, updating_user_id: s
                         await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command - unsucessful - {user_name} already had a horse')
                     else:
                         try:
-                            QUERY = (f"INSERT INTO horse_information VALUES ({user_id}, {server_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 7, 7, 7, 7, 30, 10, 0, 0, {coat}, 0, \"\", \"\", \"\", \"\", \"\", \"\", \"\" )")
+                            QUERY = (
+                                f'INSERT INTO horse_information (user_id, server_id, user_name, horse_name, gender, health, hunger, thirst, clean, money, bot_pts, server_pts, harpg_pts, coat, custom_thumb) '
+                              + f'VALUES ({user_id}, {server_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 7, 7, 7, 7, 30, 10, 0, 0, {coat}, 0)' 
+                            )
                             cursor.execute(QUERY)
                             conn.commit() 
                             await interaction.response.send_message(f'{pony_name} has been registered to {user_name}')
@@ -1387,9 +1373,9 @@ async def checkPony(interaction: discord.Interaction):
     server_id = interaction.guild.id
     user_id = interaction.user.id
     horse_data = await Client.gather_all_horse_data(user_id, server_id)
-    coat_values = await Client.gather_coat_values({horse_data[13]})
 
     if horse_data:
+        coat_values = await Client.gather_coat_values({horse_data[13]})
         stats_t = f'{horse_data[3]}\'s Care Stats'
         stats_v = await Client.stat_string(horse_data)
 
@@ -1455,10 +1441,11 @@ async def treatSnacking(interaction: discord.Interaction, treat_type: str):
     user_id = interaction.user.id
     server_id = interaction.guild.id
     horse_data = await Client.gather_all_horse_data(user_id, server_id)
-    if horse_data[7] < 10:
-        await Client.update_user_points(user_id, server_id, "bot", 10)
-
+    
     if horse_data:
+        if horse_data[7] < 10:
+            await Client.update_user_points(user_id, server_id, "bot", 10)
+
         message = (f'{horse_data[3]} snacks on {treat_type}. {PRONOUNS_CAP[horse_data[4],0]} loved it!')
         title = f'Giving {horse_data[3]} Treats'
         embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
@@ -1478,11 +1465,12 @@ async def foodTime(interaction: discord.Interaction, feed_type: str, feed_amount
     user_id = interaction.user.id
     server_id = interaction.guild.id
     horse_data = await Client.gather_all_horse_data(user_id, server_id)
-    if horse_data[6] < 10:
-        await Client.update_user_points(user_id, server_id, "bot", 10)
-
-    await Client.update_horse_data(user_id, server_id, "hunger", 10)
+    
     if horse_data:
+        await Client.update_horse_data(user_id, server_id, "hunger", 10)
+        if horse_data[6] < 10:
+            await Client.update_user_points(user_id, server_id, "bot", 10)
+
         message = (f'You feed {horse_data[3]} {feed_amount}lbs of {feed_type}. {PRONOUNS_CAP[horse_data[4],0]} is full and satisfied.')
         title = f'Feeding {horse_data[3]}'
         embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
@@ -1506,12 +1494,13 @@ async def waterTime(interaction: discord.Interaction):
     user_id = interaction.user.id
     server_id = interaction.guild.id
     horse_data = await Client.gather_all_horse_data(user_id, server_id)
-    if horse_data[7] < 10:
-        await Client.update_user_points(user_id, server_id, "bot", 10)
-
-    await Client.update_horse_data(user_id, server_id, "thirst", 10)
+    
     #print(f'{horse_data}')
     if horse_data:
+        await Client.update_horse_data(user_id, server_id, "thirst", 10)
+        if horse_data[7] < 10:
+            await Client.update_user_points(user_id, server_id, "bot", 10)
+
         message = (f'{horse_data[3]}\'s water bucket is now full. {PRONOUNS_CAP[horse_data[4],0]} takes a nice long sip.')
         title = f'Filling {horse_data[3]}\'s Water'
         embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
@@ -1533,13 +1522,14 @@ async def brushTime(interaction: discord.Interaction):
     user_id = interaction.user.id
     server_id = interaction.guild.id
     horse_data = await Client.gather_all_horse_data(user_id, server_id)
-    if horse_data[8] < 10:
-        await Client.update_user_points(user_id, server_id, "bot", 10)
-
-    await Client.update_horse_data(user_id, server_id, "clean", 10)
-    #print(f'{horse_data}')
-       
+    
+    #print(f'{horse_data}')      
     if horse_data:
+        if horse_data[8] < 10:
+            await Client.update_user_points(user_id, server_id, "bot", 10)
+
+        await Client.update_horse_data(user_id, server_id, "clean", 10)
+
         message = (f'{horse_data[3]} enjoys being brushed. {PRONOUNS_CAP[horse_data[4],2]} coat is now spotless!')
         title = f'Brushing {horse_data[3]}'
         embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
@@ -1565,12 +1555,13 @@ async def vetServices(interaction: discord.Interaction, vet_services: int):
         user_id = interaction.user.id
         server_id = interaction.guild.id
         horse_data = await Client.gather_all_horse_data(user_id, server_id)
-        if horse_data[5] < 10:
-            await Client.update_user_points(user_id, server_id, "bot", 10)
-
-        await Client.update_horse_data(user_id, server_id, "health", 10)
-        
+                
         if horse_data:
+            if horse_data[5] < 10:
+                await Client.update_user_points(user_id, server_id, "bot", 10)
+
+            await Client.update_horse_data(user_id, server_id, "health", 10)
+            
             #print(f'{horse_data[3]}: {PRONOUNS_CAP[horse_data[4],2]} health is {horse_data[5]}')
             message = ""
             footer = f'{horse_data[3]} is now at full health!'
@@ -1590,7 +1581,6 @@ async def vetServices(interaction: discord.Interaction, vet_services: int):
             await interaction.response.send_message(embed=embed)
         else:
             await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
-
 
 
 ################################# BOT RUN COMMANDS #################################
