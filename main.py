@@ -6,6 +6,8 @@ import discord
 from discord.ext import commands
 from discord.ext import tasks
 from discord import app_commands
+from discord import ui
+from discord.ui import Button, View, Select
 
 SERVER = 0 #add testing discord server id here
 BOT_COLOR = discord.Color.from_str("#81A6EE")
@@ -18,7 +20,6 @@ BOT_CREDITS = f'This bot was made in collaboration between kyraltre and MoonFlow
 def connect_db():
     return mysql.connector.connect(
         #Database Values
-        
              
     )
 
@@ -30,8 +31,8 @@ class Client(commands.Bot):
         print(f'Successfully connected as {self.user}.')
         print("successfully finished startup")
         
-        self.stats_update.start()
-        print(f'started the stat update loop')
+        #self.stats_update.start()
+        #print(f'started the stat update loop')
 
         try: #force syncing with the dev server to test commands
             guild=discord.Object(id=SERVER)
@@ -127,7 +128,7 @@ class Client(commands.Bot):
         conn = connect_db()
         cursor = conn.cursor()
 
-        SELECTION_STR = (f'SELECT user_name, horse_name, {point_type}_pts FROM horse_information WHERE server_id = {server_id} ORDER BY {point_type}_pts DESC')
+        SELECTION_STR = (f'SELECT user_name, horse_name, {point_type}_pts FROM horse_information WHERE server_id = {server_id} AND {point_type}_pts > 0 ORDER BY {point_type}_pts DESC')
         #print(f'Horse Data Query: {SELECTION_STR}')
         cursor.execute(SELECTION_STR)
         leaderboard = cursor.fetchmany(5)
@@ -163,9 +164,9 @@ class Client(commands.Bot):
             cursor = conn.cursor()
             
             #reduce stat values
-            cursor.execute("UPDATE horse_information SET hunger = hunger - 2")
-            cursor.execute("UPDATE horse_information SET thirst = thirst - 3")
-            cursor.execute("UPDATE horse_information SET clean = clean - 1")
+            cursor.execute("UPDATE horse_information SET hunger = hunger - 4")
+            cursor.execute("UPDATE horse_information SET thirst = thirst - 5")
+            cursor.execute("UPDATE horse_information SET clean = clean - 3")
             conn.commit()
 
             #ensure no stat is below zero
@@ -175,7 +176,7 @@ class Client(commands.Bot):
             conn.commit()
 
             #update health based on other values
-            cursor.execute("UPDATE horse_information SET health = health - 2 WHERE hunger <= 5 AND thirst <= 5")
+            cursor.execute("UPDATE horse_information SET health = health - 4 WHERE hunger <= 5 AND thirst <= 5")
             conn.commit()
 
             #ensure health is not below zero
@@ -337,7 +338,7 @@ class Client(commands.Bot):
                 print(f"The bad query: {QUERY_CUST}")
                 return False
 
-### Remove custom images to use
+    ### Remove custom images to use
     async def remove_custom_image(user_id, server_id, image_type):
         horse_data = await Client.gather_all_horse_data(user_id, server_id)
         data_column = ""
@@ -413,9 +414,273 @@ class Client(commands.Bot):
                 print(f"The bad query: {QUERY_CUST}")
                 return False
 
+    ### Run the feeding stat updates and embed from the drop down
+    async def feed_pony(user_id, server_id, horse_data, selection_str, interaction_channel):
+        channel = client.get_channel(interaction_channel)
+        
+        overfed = False
+        food_amount = int(selection_str[0])
+        food_total = horse_data[6] + food_amount
+        if food_total > 10:
+            food_total = 10
+            updated_health = horse_data[5] - 2
+            if updated_health < 0:
+                updated_health = 0
+            await Client.update_horse_data(user_id, server_id, "health", updated_health)
+            overfed = True
+
+        await Client.update_horse_data(user_id, server_id, "hunger", food_total)                
+        if horse_data[6] < 10:
+            if overfed:
+                await Client.update_user_points(user_id, server_id, "bot", 1)
+            else:
+                await Client.update_user_points(user_id, server_id, "bot", food_amount)
+
+        message = ""
+        if food_total == 10 and overfed == False:
+            message = f'{horse_data[3]} enjoys this meal. {PRONOUNS_CAP[horse_data[4],0]} is full and satisfied!'
+        elif food_total == 10 and overfed == True:
+            message = f'While {horse_data[3]} appreciates the food, {PRONOUNS_LOW[horse_data[4],0]} has been overfed... {PRONOUNS_CAP[horse_data[4],0]} doesn\'t feel great right now.'
+        else:
+            message = f'{PRONOUNS_CAP[horse_data[4],0]} is munching away, {PRONOUNS_LOW[horse_data[4],0]} appreciates the meal!'
+            
+        title = f'You feed {horse_data[3]} {selection_str}.'
+        embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
+
+        if horse_data[14] == 0:
+            coat_values = await Client.gather_coat_values(horse_data[13])
+            embed.set_image(url = coat_values[6])
+        if horse_data[14] == 1 and not(horse_data[18] == ""):
+            embed.set_image(url = horse_data[18])
+
+        footer = ""
+        if food_total == 10 and overfed == False:
+            footer = f'{horse_data[3]} is no longer hungry!'
+        elif food_total == 10 and overfed == True:
+            footer = f'{horse_data[3]} has been overfed... {PRONOUNS_LOW[horse_data[4],2]} health has decreased.'
+        else:
+            footer = f'{horse_data[3]} still wants {10-food_total} lbs of food.'
+        embed.set_footer(text=footer)
+
+        full_message = f'###{title} \n\n{message} \n\n-# {footer}'
+        await channel.send(embed=embed)
+
+    ### Run the watering stat update and embed from the drop down
+    async def water_pony(user_id, server_id, horse_data, selection_str, interaction_channel):
+        channel = client.get_channel(interaction_channel)
+        
+        overwatered = False
+        water_amount = int(selection_str[0])
+        water_total = horse_data[7] + water_amount
+        if water_total > 10:
+            water_total = 10
+            updated_clean = horse_data[8] - 2
+            if updated_clean < 0:
+                updated_clean = 0
+            await Client.update_horse_data(user_id, server_id, "clean", updated_clean)
+            overwatered = True
+
+        await Client.update_horse_data(user_id, server_id, "thirst", water_total)                
+        if horse_data[7] < 10:
+            if overwatered:
+                await Client.update_user_points(user_id, server_id, "bot", 1)
+            else:
+                await Client.update_user_points(user_id, server_id, "bot", water_amount)
+
+        message = ""
+        if water_total == 10 and overwatered == False:
+            message = f'{horse_data[3]} takes several glups of water. {PRONOUNS_CAP[horse_data[4],2]} thirst is quenched!'
+        elif water_total == 10 and overwatered == True:
+            message = f'While {horse_data[3]} appreciates the new water, {PRONOUNS_LOW[horse_data[4],0]} also appreciates the muddy mess the overflowed bucket produces... {PRONOUNS_CAP[horse_data[4],0]} rolls around in the mud happily!'
+        else:
+            message = f'{PRONOUNS_CAP[horse_data[4],0]} takes a little sip, {PRONOUNS_LOW[horse_data[4],0]} appreciates the new water.'
+            
+        title = f'You fill {horse_data[3]}\'s water bucket with {selection_str}.'
+        embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
+
+        if horse_data[14] == 0:
+            coat_values = await Client.gather_coat_values(horse_data[13])
+            embed.set_image(url = coat_values[7])
+        if horse_data[14] == 1 and not(horse_data[19] == ""):
+            embed.set_image(url = horse_data[19])
+
+        footer = ""
+        if water_total == 10 and overwatered == False:
+            footer = f'{horse_data[3]} is no longer thirsty!'
+        elif water_total == 10 and overwatered == True:
+            footer = f'{horse_data[3]}\'s waterbucket has overflowed and created a mess... {PRONOUNS_LOW[horse_data[4],2]} cleanliness has decreased.'
+        else:
+            footer = f'{horse_data[3]} still wants {10-water_total} gallons of water.'
+        embed.set_footer(text=footer)
+
+        full_message = f'###{title} \n\n{message} \n\n-# {footer}'
+        await channel.send(embed=embed)
+
+    ### Run the health stat update and embed from the drop down
+    async def vet_pony(user_id, server_id, horse_data, selection_str, interaction_channel):
+        channel = client.get_channel(interaction_channel)
+        
+        overhealth = False
+        health_amount = int(selection_str[0])
+        
+        health_total = horse_data[5] + health_amount
+        if health_total > 10:
+            health_total = 10
+            overhealth = True
+
+        await Client.update_horse_data(user_id, server_id, "health", health_total)                
+        if horse_data[5] < 10:
+            if overhealth:
+                await Client.update_user_points(user_id, server_id, "bot", 1)
+            else:
+                await Client.update_user_points(user_id, server_id, "bot", health_amount)
+
+        message = ""
+        if overhealth:
+            match health_amount:
+                case 1:
+                    message = f'The vet performs a wellness check on {horse_data[3]}. They find nothing wrong with {PRONOUNS_LOW[horse_data[4],1]}'
+                case 2:
+                    message = f'The vet double checks their paperwork... and finds {horse_data[3]} doesn\'t need any vaccines right now. They still perform a once over on {horse_data[3]}, just to verify {PRONOUNS_LOW[horse_data[4],0]} is in good health.'
+                case 3:
+                    message = f'The vet checks {horse_data[3]}\'s sample, and really doesn\'t need deworming right now. They still issue a minimal dose to remove the tiny amount that do exist, but warns that over-worming can cause resistance to the treatment.'
+                case 4:
+                    message = f'The vet performs the body work on {horse_data[3]}... but finds that {horse_data[3]} is loose and limber already.'
+                case 5:
+                    message = f'The vet sedates and starts work on {horse_data[3]}]\'s mouth... but doesn\'t find a lot of work to do. {PRONOUNS_CAP[horse_data[4],1]} mouth looks really good already.'
+        else:
+            match health_amount:
+                case 1:
+                    message = f'The vet performs a wellness check on {horse_data[3]}. They find that {horse_data[3]} is stiff, they teach you a series of stretches to do with {horse_data[3]}.'
+                case 2:
+                    message = f'The vet gives {horse_data[3]} {PRONOUNS_LOW[horse_data[4],1]} vaccines. {PRONOUNS_CAP[horse_data[4],0]} stands and is very brave for {PRONOUNS_LOW[horse_data[4],1]} shots!'
+                case 3:
+                    message = f'The vet checks {horse_data[3]}\'s sample and finds worms! They immediately administer dewormer to {horse_data[3]}. {PRONOUNS_CAP[horse_data[4],0]} willingly takes the medicine.'
+                case 4:
+                    message = f'The vet performs body work on {horse_data[3]}. Through the process, {horse_data[3]} becomes more comfortable, loose, and limber.'
+                case 5:
+                    message = f'The vet sedates and floats {horse_data[3]}\'s teeth. The sharp points are smoothed and {horse_data[3]} has a pain free mouth.'
+
+        if health_total == 10 and overhealth == False:
+            message += f'\n\n{horse_data[3]} overjoyed that the vet came by. {PRONOUNS_CAP[horse_data[4],0]} is feeling so much better now!'
+        elif health_total == 10 and overhealth == True:
+            message += f'\n\nWhile {horse_data[3]} appreciates the care from the vet, {PRONOUNS_LOW[horse_data[4],0]} is just fine... The vet is also mildly upset they were called out for no reason.'
+        else:
+            message += f'\n\n{horse_data[3]} is happy the vet is here to help {PRONOUNS_LOW[horse_data[4],1]}.'
+           
+        #####message += f'\n\n Addition - {health_amount} \nOG Value - {horse_data[5]} \nNew Total = {health_total} \nOver Health - {overhealth}'
+
+        title = f'The vet has visited {horse_data[3]}.'
+        embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
+
+        footer = ""
+        if health_total == 10 and overhealth == False:
+            footer = f'{horse_data[3]} is at full health!'
+        elif health_total == 10 and overhealth == True:
+            footer = f'{horse_data[3]} had vet work done to {PRONOUNS_LOW[horse_data[4],1]} that {PRONOUNS_LOW[horse_data[4],0]} didn\'t need. {PRONOUNS_CAP[horse_data[4],0]} is sad.'
+        else:
+            footer = f'{horse_data[3]} still needs to regain {10-health_total} health points.'
+        embed.set_footer(text=footer)
+
+        full_message = f'###{title} \n\n{message} \n\n-# {footer}'
+        await channel.send(embed=embed)
+
+    ### Run the clean stat update and embed from the drop down
+    async def groom_pony(user_id, server_id, horse_data, selection_str, interaction_channel):
+        channel = client.get_channel(interaction_channel)
+        
+        overclean = False
+        clean_amount = int(selection_str[0])
+        
+        clean_total = horse_data[8] + clean_amount
+        if clean_total > 10:
+            clean_total = 10
+            overclean = True
+
+        await Client.update_horse_data(user_id, server_id, "clean", clean_total)                
+        if horse_data[8] < 10:
+            if overclean:
+                await Client.update_user_points(user_id, server_id, "bot", 1)
+            else:
+                await Client.update_user_points(user_id, server_id, "bot", clean_amount)
+
+        message = ""
+        if overclean:
+            match clean_amount:
+                case 1: #light brushing
+                    message = f'You lightly groom {horse_data[3]}. You find that {PRONOUNS_LOW[horse_data[4],2]} coat is already spotless.'
+                case 2: #good grooming
+                    message = f'You start to do a through groom of {horse_data[3]}... but find that {PRONOUNS_LOW[horse_data[4],1]} doesn\'t need it. {PRONOUNS_CAP[horse_data[4],0]} has remained clean since {PRONOUNS_LOW[horse_data[4],2]} last grooming.'
+                case 3: #braid mane and tail
+                    message = f'You get out the braiding tools... but then remember that you braided {PRONOUNS_LOW[horse_data[4],2]} hair yesterday. {horse_data[3]} gives you a mocking look.'
+                case 4: #full body bath
+                    message = f'{horse_data[3]} stands nicely for a bath even though {PRONOUNS_LOW[horse_data[4],0]} doesn\'t need it. {PRONOUNS_CAP[horse_data[4],1]} shivers from the cold and catches a little cold.'
+                    updated_health = horse_data[5] - 1
+                    if updated_health < 0:
+                        updated_health = 0
+                    await Client.update_horse_data(user_id, server_id, "health", updated_health) 
+        else:
+            match clean_amount:
+                case 1:
+                    message = f'{horse_data[3]} leans into you while you lightly brush {PRONOUNS_LOW[horse_data[4],1]}. You can feel the love. :heart:'
+                case 2:
+                    message = f'You throughly clean {horse_data[3]}. {PRONOUNS_CAP[horse_data[4],0]} loves every moment of the process.'
+                case 3:
+                    message = f'While {horse_data[3]} struggles to stand still for the braiding, you eventually finish putting {PRONOUNS_LOW[horse_data[4],2]} hair into the protective styles.'
+                case 4:
+                    message = f'You spend the afternoon bathing {horse_data[3]}. {PRONOUNS_CAP[horse_data[4],0]} now is sparkling and beautiful.'
+
+        if clean_total == 10 and overclean == False:
+            message += f'\n\n{horse_data[3]} is looking perfect! {PRONOUNS_CAP[horse_data[4],0]} is completely clean!'
+        elif clean_total == 10 and overclean == True:
+            message += f'\n\nWhile {horse_data[3]} appreciates the care and attention, but {PRONOUNS_LOW[horse_data[4],0]} is now thinking of ways to get dirty since they have been overly pampered.'
+        else:
+            message += f'\n\n{horse_data[3]} is happy to be getting this attention!.'
+           
+        #message += f'\n\n Addition - {clean_amount} \nOG Value - {horse_data[5]} \nNew Total = {clean_total} \nOver Health - {overclean}'
+
+        title = f'You have groomed {horse_data[3]}.'
+        embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
+
+        if horse_data[14] == 0:
+            coat_values = await Client.gather_coat_values(horse_data[13])
+            embed.set_image(url = coat_values[5])
+        if horse_data[14] == 1 and not(horse_data[20] == ""):
+             embed.set_image(url = horse_data[20])
+
+        footer = ""
+        if clean_total == 10 and overclean == False:
+            footer = f'{horse_data[3]} is completely clean!'
+        elif clean_total == 10 and overclean == True:
+            footer = f'{horse_data[3]} had extra grooming done to {PRONOUNS_LOW[horse_data[4],1]} that {PRONOUNS_LOW[horse_data[4],0]} didn\'t need. {PRONOUNS_CAP[horse_data[4],0]} is sad.'
+        else:
+            footer = f'{horse_data[3]} still needs to regain {10-clean_total} clean points.'
+        embed.set_footer(text=footer)
+
+        full_message = f'###{title} \n\n{message} \n\n-# {footer}'
+        await channel.send(embed=embed)
+
+    ### Run the treat embed from the drop down
+    async def treat_pony(user_id, server_id, horse_data, selection_str, interaction_channel):
+        channel = client.get_channel(interaction_channel)
+        
+        treat_low = selection_str.lower()
+        message = f'{PRONOUNS_CAP[horse_data[4], 0]} happily takes the {treat_low} from you. {horse_data[3]} loves it and nickers happily at you!'
+        
+        title = f'You give {horse_data[3]} a {selection_str}.'
+        embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
+
+        if horse_data[14] == 0:
+            coat_values = await Client.gather_coat_values(horse_data[13])
+            embed.set_image(url = coat_values[8])
+        if horse_data[14] == 1 and not(horse_data[21] == ""):
+             embed.set_image(url = horse_data[21])
+        
+        await channel.send(embed=embed)
+
 ####################################################################################################
-################################# UPDATE HORSE STATS EVERY 6 HOURS #################################
-    @tasks.loop(hours=6)
+################################# UPDATE HORSE STATS EVERY 12 HOURS #################################
+    @tasks.loop(hours=12)
     async def stats_update(self):
         result = await Client.daily_horse_update()
         message = ""
@@ -450,7 +715,6 @@ GUILD_ID = discord.Object(id=SERVER)
 # this is for slash commands, names of commands have to be lower case
 # descriptions can have upper case
 
-
 ########################################################################################
 ################################# INFORMATION COMMANDS #################################
 ### help on user commands
@@ -473,15 +737,15 @@ async def informationMessage(interaction: discord.Interaction):
         check_t = (f':horse: **Check in on your horse and see {hpronoun} stats.** :horse:')
         check_m = (f' /checkonpony\n')
         feed_t = (f':green_apple: **Improve {horse_data[3]}\'s hunger stat** :green_apple:' ) 
-        feed_m = (f' /feed - List what you want to feed {hpronoun} and how many pounds to feed {hpronoun}.\n' )  
+        feed_m = (f' /feed\n' )  
         water_t = (f':droplet: **Improve {horse_data[3]}\'s thirst stat** :droplet:' ) 
         water_m = (f' /water\n') 
         brush_t = (f':sparkles: **Improve {horse_data[3]}\'s cleanliness stat** :sparkles:' ) 
-        brush_m = (f' /brush\n') 
+        brush_m = (f' /groom\n') 
         vet_t = (f':heart: **Improve {horse_data[3]}\'s health stat** :heart:' ) 
-        vet_m = (f' /vetcare - List what you want vet service you want to give {horse_data[3]}.\n' ) 
+        vet_m = (f' /vetcare\n' ) 
         treat_t = (f':candy: **Give {horse_data[3]} a treat** :candy:' ) 
-        treat_m = (f' /treats - List what treat you want to feed {hpronoun}.\n' ) 
+        treat_m = (f' /treats\n' ) 
                 
         point_t = (f':rosette: **Give your horse HARPG points.** :rosette:' ) 
         point_m = (f' /harpgpoints - Allow StableCare to help track your HARPG points for {horse_data[3]}\n' )
@@ -1217,15 +1481,18 @@ async def serverMoney(interaction: discord.Interaction, updating_user_id: str, m
 async def leaderboard(interaction: discord.Interaction, leaderboard_type: int):
     server_id = interaction.guild.id
     board = ""
+    nice_type = ""
     title = ""
     message = ""
     match leaderboard_type:
         case 0:
             board = "bot"
+            nice_type = "Care Points"
             title = f':trophy: {interaction.guild.name}\'s Care Points Leaderboard :trophy:'
             message = f'These points are earned through caring for your pony!\n\n'
         case 1:
             board = "server"
+            nice_type = "Server Points"
             title = f':trophy: {interaction.guild.name}\'s Server Points Leaderboard :trophy:'
             message = f'These points are given out by your server\'s moderation team!\n\n'
         case _:
@@ -1244,7 +1511,7 @@ async def leaderboard(interaction: discord.Interaction, leaderboard_type: int):
             embed.set_footer(text=BOT_CREDITS)
             await interaction.response.send_message(embed=embed)
         else:
-            await interaction.response.send_message(f'The leaderboard has no active members for this server. Register a horse and start earning points!', ephemeral = True)
+            await interaction.response.send_message(f'The {nice_type} Leaderboard for has no members with points for this server. :cry:', ephemeral = True)
 
 
 #####################################################################################################
@@ -1382,10 +1649,13 @@ async def checkPony(interaction: discord.Interaction):
         points_t = f'{horse_data[3]}\'s Points'
         points_v = (
             #f'**Money: ** ${horse_data[10]}' + f'\n' +
-            f'**Care Points: ** {horse_data[10]}' +
-            f'\n**Server Points: ** {horse_data[11]}' +
-            f'\n**HARPG Points: ** {horse_data[12]}'
+            f'**Care Points: ** {horse_data[10]}'
         )
+
+        if {horse_data[11]} > 0:
+            points_v += f'\n**Server Points: ** {horse_data[11]}'
+        if {horse_data[12]} > 0:
+            points_v += f'\n**HARPG Points: ** {horse_data[12]}'
 
         pony_name = f"**Name:** {horse_data[3]}"
         pony_gender = f"**Gender:** {PRONOUNS_CAP[horse_data[4],3]}"
@@ -1434,9 +1704,9 @@ async def checkPony(interaction: discord.Interaction):
         await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
 
-#######################################################################################
-################################# HORSE CARE COMMANDS #################################
-@client.tree.command(name="treats", description="Give your pony a treat. Type in whatever treat you want to feed your pony!", guild=GUILD_ID)
+################################################################################################
+################################# OUTDATED HORSE CARE COMMANDS #################################
+""" @client.tree.command(name="treats", description="Give your pony a treat. Type in whatever treat you want to feed your pony!", guild=GUILD_ID)
 async def treatSnacking(interaction: discord.Interaction, treat_type: str):
     user_id = interaction.user.id
     server_id = interaction.guild.id
@@ -1581,6 +1851,298 @@ async def vetServices(interaction: discord.Interaction, vet_services: int):
             await interaction.response.send_message(embed=embed)
         else:
             await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+ """
+####################################################################################
+################################# HORSE CARE MENUS #################################
+####################################################################################
+# Defines a custom Select containing colour options
+# that the user can choose. The callback function
+# of this class is called when the user changes their choice
+################################# Food #################################
+class FoodDropdown(discord.ui.Select):
+    def __init__(self):
+
+        # Set the options that will be presented inside the dropdown
+        options = [
+            discord.SelectOption(label='1 lb of Grain', emoji='🧺'),
+            discord.SelectOption(label='2 lbs of Orchard hay', emoji='🌿'),
+            discord.SelectOption(label='3 lbs of Timothy', emoji='🌾'),
+            discord.SelectOption(label='4 lbs of Clover hay', emoji='☘️'),
+            discord.SelectOption(label='5 lbs of Alfalfa', emoji='🥬'),
+        ]
+
+        # The placeholder is what will be shown when no option is chosen
+        # The min and max values indicate we can only pick one of the three options
+        # The options parameter defines the dropdown options. We defined this above
+        super().__init__(placeholder='Feed your pony...', min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        # Use the interaction object to send a response message containing
+        # the user's favourite colour or choice. The self object refers to the
+        # Select object, and the values attribute gets a list of the user's
+        # selected options. We only want the first one.
+
+        user_id = interaction.user.id
+        server_id = interaction.guild.id
+        horse_data = await Client.gather_all_horse_data(user_id, server_id)
+        selection_str = self.values[0]
+        channel = interaction.channel.id 
+        
+
+        if horse_data:
+            await interaction.response.send_message(f'You head to the feed room to collect {horse_data[3]}\'s meal.', ephemeral=True)
+            await Client.feed_pony(user_id, server_id, horse_data, selection_str, channel)
+            
+        else:
+            await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+ 
+class FoodView(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+
+        # Adds the dropdown to our view object.
+        self.add_item(FoodDropdown())
+    
+### display buttons
+@client.tree.command(name="feed", description="Feed your pony!", guild=GUILD_ID)
+async def food(interaction: discord.Interaction):
+    """Sends a message with our dropdown containing colours"""
+
+    # Create the view containing our dropdown
+    view = FoodView()
+
+    user_id = interaction.user.id
+    server_id = interaction.guild.id
+    horse_data = await Client.gather_all_horse_data(user_id, server_id)
+        
+    if horse_data:
+        #await Client.update_horse_data(user_id, server_id, "hunger", 10)
+        #if horse_data[6] < 10:
+        message = ""
+        if horse_data[6] == 10:
+            message = (f'Are you sure you want to feed {horse_data[3]}? {PRONOUNS_CAP[horse_data[4],0]} doesn\' need any more food right now...')
+        else:
+            message = (f'Time to feed {horse_data[3]}! {PRONOUNS_CAP[horse_data[4],0]} needs {10-horse_data[6]} pounds of food.')
+        # Sending a message containing our view
+        await interaction.response.send_message(message, view=view, delete_after=30)
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+
+
+################################# Water #################################
+class WaterDropdown(discord.ui.Select):
+    def __init__(self):
+
+        options = [
+            discord.SelectOption(label='1 gallon of water', emoji='🔹'),
+            discord.SelectOption(label='2 gallons of water', emoji='🔷'),
+            discord.SelectOption(label='3 gallons of water', emoji='💙'),
+            discord.SelectOption(label='4 gallons of water', emoji='🔵'),
+            discord.SelectOption(label='5 gallons of water', emoji='🟦'),
+        ]
+
+        super().__init__(placeholder='How much water do you add...', min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        user_id = interaction.user.id
+        server_id = interaction.guild.id
+        horse_data = await Client.gather_all_horse_data(user_id, server_id)
+        selection_str = self.values[0]
+        channel = interaction.channel.id 
+        
+
+        if horse_data:
+            await interaction.response.send_message(f'You fetch the hose to start adding water to {horse_data[3]}\'s water bucket.', ephemeral=True)
+            await Client.water_pony(user_id, server_id, horse_data, selection_str, channel)
+            
+        else:
+            await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+        
+
+class WaterView(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+
+        self.add_item(WaterDropdown())
+    
+
+@client.tree.command(name="water", description="Fill your pony's water bucket", guild=GUILD_ID)
+async def water(interaction: discord.Interaction):
+    view = WaterView()
+
+    user_id = interaction.user.id
+    server_id = interaction.guild.id
+    horse_data = await Client.gather_all_horse_data(user_id, server_id)
+        
+    if horse_data:
+        message = ""
+        if horse_data[7] == 10:
+            message = (f'Are you sure you want to add water to {horse_data[3]}\'s bucket? {PRONOUNS_CAP[horse_data[4],2]} water bucket is full right now.')
+        else:
+            message = (f'Time to add water to {horse_data[3]}\'s bucket! {PRONOUNS_CAP[horse_data[4],0]} needs {10-horse_data[7]} gallons of water.')
+        await interaction.response.send_message(message, view=view, delete_after=30)
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+
+################################# Vet #################################
+class VetDropdown(discord.ui.Select):
+    def __init__(self):
+
+        options = [
+            discord.SelectOption(label='1 pts - Wellness Check', emoji='🩹'),
+            discord.SelectOption(label='2 pts - Vaccines', emoji='💉'),
+            discord.SelectOption(label='3 pts - Deworming', emoji='💊'),
+            discord.SelectOption(label='4 pts - Body Work', emoji='🤲'),
+            discord.SelectOption(label='5 pts - Dental Float', emoji='🦷'),
+        ]
+
+        super().__init__(placeholder='What service is the vet performing today...', min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        user_id = interaction.user.id
+        server_id = interaction.guild.id
+        horse_data = await Client.gather_all_horse_data(user_id, server_id)
+        selection_str = self.values[0]
+        channel = interaction.channel.id 
+        
+
+        if horse_data:
+            await interaction.response.send_message(f'You called the vet out to check out {horse_data[3]}.', ephemeral=True)
+            await Client.vet_pony(user_id, server_id, horse_data, selection_str, channel)
+            
+        else:
+            await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+        
+
+class VetView(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+
+        self.add_item(VetDropdown())
+    
+
+@client.tree.command(name="vetcare", description="Call the vet to improve your pony's health!", guild=GUILD_ID)
+async def vet(interaction: discord.Interaction):
+    view = VetView()
+
+    user_id = interaction.user.id
+    server_id = interaction.guild.id
+    horse_data = await Client.gather_all_horse_data(user_id, server_id)
+        
+    if horse_data:
+        message = ""
+        if horse_data[5] == 10:
+            message = (f'Are you sure you want call out the vet? {horse_data[3]} is at full health.')
+        else:
+            message = (f'Time to call {horse_data[3]}\'s vet! {PRONOUNS_CAP[horse_data[4],0]} needs to regain {10-horse_data[5]} health points.')
+        await interaction.response.send_message(message, view=view, delete_after=30)
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+
+################################# Grooming #################################
+class GroomingDropdown(discord.ui.Select):
+    def __init__(self):
+
+        options = [
+            discord.SelectOption(label='1 pts - Light Brushing', emoji='🧽'),
+            discord.SelectOption(label='2 pts - Thorough Groom', emoji='🧼'),
+            discord.SelectOption(label='3 pts - Mane and Tail Braiding', emoji='🎀'),
+            discord.SelectOption(label='4 pts - Full Body Bath', emoji='🛁'),
+        ]
+
+        super().__init__(placeholder='What grooming activity are you doing today...', min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        user_id = interaction.user.id
+        server_id = interaction.guild.id
+        horse_data = await Client.gather_all_horse_data(user_id, server_id)
+        selection_str = self.values[0]
+        channel = interaction.channel.id 
+        
+
+        if horse_data:
+            await interaction.response.send_message(f'You go to the tack room to fetch {horse_data[3]}\'s brushes.', ephemeral=True)
+            await Client.groom_pony(user_id, server_id, horse_data, selection_str, channel)
+            
+        else:
+            await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+        
+
+class GroomingView(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+
+        self.add_item(GroomingDropdown())
+    
+
+@client.tree.command(name="groom", description="Clean your pony!", guild=GUILD_ID)
+async def groom(interaction: discord.Interaction):
+    view = GroomingView()
+
+    user_id = interaction.user.id
+    server_id = interaction.guild.id
+    horse_data = await Client.gather_all_horse_data(user_id, server_id)
+        
+    if horse_data:
+        message = ""
+        if horse_data[8] == 10:
+            message = (f'Are you sure you want to groom {horse_data[3]}? {PRONOUNS_CAP[horse_data[4],0]} is perfectly.')
+        else:
+            message = (f'Time to groom {horse_data[3]}! {PRONOUNS_CAP[horse_data[4],0]} needs to regain {10-horse_data[8]} cleanliness points.')
+        await interaction.response.send_message(message, view=view, delete_after=30)
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+
+################################# Grooming #################################
+class TreatsDropdown(discord.ui.Select):
+    def __init__(self):
+
+        options = [
+            discord.SelectOption(label='Apple', emoji='🍎'),
+            discord.SelectOption(label='Peppermint', emoji='🍬'),
+            discord.SelectOption(label='Sugarcube', emoji='🧊'),
+            discord.SelectOption(label='Carrot', emoji='🥕'),
+            discord.SelectOption(label='Cookie', emoji='🍪'),
+        ]
+
+        super().__init__(placeholder='What treat are you feeding you pony...', min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        user_id = interaction.user.id
+        server_id = interaction.guild.id
+        horse_data = await Client.gather_all_horse_data(user_id, server_id)
+        selection_str = self.values[0]
+        channel = interaction.channel.id 
+        
+
+        if horse_data:
+            await interaction.response.send_message(f'You have fetched the treats for {horse_data[3]}.', ephemeral=True)
+            await Client.treat_pony(user_id, server_id, horse_data, selection_str, channel)
+            
+        else:
+            await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+        
+
+class TreatsView(discord.ui.View):
+    def __init__(self):
+        super().__init__()
+
+        self.add_item(TreatsDropdown())
+    
+
+@client.tree.command(name="treats", description="Feed your pony a treat!", guild=GUILD_ID)
+async def treat(interaction: discord.Interaction):
+    view = TreatsView()
+
+    user_id = interaction.user.id
+    server_id = interaction.guild.id
+    horse_data = await Client.gather_all_horse_data(user_id, server_id)
+        
+    if horse_data:
+        message = (f'Time to give {horse_data[3]} a treat!')
+        await interaction.response.send_message(message, view=view, delete_after=30)
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
 
 ################################# BOT RUN COMMANDS #################################
