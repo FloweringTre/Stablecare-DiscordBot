@@ -2,13 +2,11 @@ import discord.member
 import numpy as np
 import mysql.connector
 import random
+from typing import Any
 import discord
 from discord.ext import commands
 from discord.ext import tasks
 from discord import app_commands
-from discord import ui
-from discord.ui import Button, View, Select
-import asyncio
 
 SERVER = 0 #add testing discord server id here
 BOT_COLOR = discord.Color.from_str("#81A6EE")
@@ -611,8 +609,7 @@ class Client(commands.Bot):
             message += f'\n\nWhile {horse_data[3]} appreciates the care from the vet, {PRONOUNS_LOW[horse_data[4],0]} is just fine... The vet is also mildly upset they were called out for no reason.'
         else:
             message += f'\n\n{horse_data[3]} is happy the vet is here to help {PRONOUNS_LOW[horse_data[4],1]}.'
-           
-        #####message += f'\n\n Addition - {health_amount} \nOG Value - {horse_data[5]} \nNew Total = {health_total} \nOver Health - {overhealth}'
+         
 
         title = f'The vet has visited {horse_data[3]}.'
         embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
@@ -662,8 +659,6 @@ class Client(commands.Bot):
             message += f'\n\nWhile {horse_data[3]} appreciates the care and attention, but {PRONOUNS_LOW[horse_data[4],0]} is now thinking of ways to get dirty since they have been overly pampered.'
         else:
             message += f'\n\n{horse_data[3]} is happy to be getting this attention!.'
-           
-        message += f'\n\n Addition - {clean_amount} \nOG Value - {horse_data[5]} \nNew Total = {clean_total} \nOver Health - {overclean}'
 
         title = f'You have groomed {horse_data[3]}.'
         embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
@@ -2237,7 +2232,7 @@ async def food(interaction: discord.Interaction):
         if not(interaction.channel_id == server_data[5]):
             await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
         else:
-            interaction.response.send_message(message, view=view, delete_after=30)
+            await interaction.response.send_message(message, view=view, delete_after=30)
     else:
         await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
@@ -2298,7 +2293,7 @@ async def water(interaction: discord.Interaction):
         if not(interaction.channel_id == server_data[5]):
             await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
         else:
-            interaction.response.send_message(message, view=view, delete_after=30)
+            await interaction.response.send_message(message, view=view, delete_after=30)
     else:
         await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
@@ -2358,7 +2353,7 @@ async def vet(interaction: discord.Interaction):
         if not(interaction.channel_id == server_data[5]):
             await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
         else:
-            interaction.response.send_message(message, view=view, delete_after=30)
+            await interaction.response.send_message(message, view=view, delete_after=30)
     else:
         await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
@@ -2554,13 +2549,13 @@ async def trainPony(interaction: discord.Interaction, skill_to_train: str):
                     if skill_level >= 0 or skill_level < 11:
                         level = 1
                         lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} needs {10-skill_level} more points to level up.'
-                    if skill_level >= 10 or skill_level < 21:
+                    elif skill_level >= 10 or skill_level < 21:
                         level = 2
                         lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} needs {20-skill_level} more points to level up.'
-                    if skill_level >= 20 or skill_level < 30:
+                    elif skill_level >= 20 or skill_level < 30:
                         level = 3
                         lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} needs {30-skill_level} more points to level up.'
-                    if skill_level == 30:
+                    elif skill_level == 30:
                         level = 3
                         lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} is maxxed out in this skill... but {horse_data[3]} is welcome to continue to practice {PRONOUNS_LOW[horse_data[4], 2]} {skill_name.lower()} skill!'
                     
@@ -2798,9 +2793,11 @@ async def enterShow(interaction: discord.Interaction):
                         level = 0
                         if class_skill_value >= 0 or class_skill_value < 11:
                             level = 1
-                        if class_skill_value >= 10 or class_skill_value < 21:
+                        elif class_skill_value >= 10 or class_skill_value < 21:
                             level = 2
-                        if class_skill_value >= 20:
+                        elif class_skill_value >= 20 or class_skill_value < 31:
+                            level = 3
+                        elif class_skill_value >= 30:
                             level = 3
 
                         question = await Client.get_question(level)
@@ -2868,7 +2865,6 @@ async def enterShow(interaction: discord.Interaction):
 
     else:
         await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
-
 
 ################################# BOT RUN COMMANDS #################################
 client.run('')
