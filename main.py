@@ -8,6 +8,7 @@ from discord.ext import tasks
 from discord import app_commands
 from discord import ui
 from discord.ui import Button, View, Select
+import asyncio
 
 SERVER = 0 #add testing discord server id here
 BOT_COLOR = discord.Color.from_str("#81A6EE")
@@ -31,8 +32,11 @@ class Client(commands.Bot):
         print(f'Successfully connected as {self.user}.')
         print("successfully finished startup")
         
-        #self.stats_update.start()
-        #print(f'started the stat update loop')
+        self.stats_update.start()
+        print(f'started the stat update loop')
+
+        self.run_the_shows.start()
+        print(f'started the show running loop')
 
         try: #force syncing with the dev server to test commands
             guild=discord.Object(id=SERVER)
@@ -42,16 +46,6 @@ class Client(commands.Bot):
         except Exception as e: #find errors with the syncing of commands
             print(f'Error syncing commands: {e}')
 
-
-    #async def on_message(self, message): #reading and responding to messages
-    #    if message.author == self.user:
-    #        return
-    #    if message.content.startswith('hello'):
-    #        await message.channel.send(f'Hello there {message.author} :horse: :heart:') 
-
-    #async def on_reaction_add(self, reaction): #reading and responding to reactions
-    #    await reaction.message.channel.send('You reacted... terminating bot')
-    #    quit()
 
     ########################################################################################
     ################################# STABLECARE FUNCTIONS #################################
@@ -69,6 +63,18 @@ class Client(commands.Bot):
         
         return server_data
     
+    ### count number of servers the bot is in
+    async def count_servers():
+        conn = connect_db()
+        cursor = conn.cursor()
+
+        cursor.execute("SELECT COUNT(*) FROM server_data")
+        servers = cursor.fetchone()
+        
+        conn.close()
+        
+        return servers
+
     ### updating server information
     async def update_server_data(server_id, data_column, updated_value):
         try:
@@ -123,7 +129,7 @@ class Client(commands.Bot):
         
         return coat_values
     
-    ### get top ten values
+    ### get top 5 values
     async def get_leaderboard(server_id, point_type):
         conn = connect_db()
         cursor = conn.cursor()
@@ -136,6 +142,25 @@ class Client(commands.Bot):
         conn.close()
         
         return leaderboard
+
+    ### get random question for training/showing
+    async def get_question(question_level):
+        conn = connect_db()
+        cursor = conn.cursor()
+
+        if (question_level < 0) or (question_level > 3):
+            return False
+
+        question_table = f'math_lvl_{question_level}'
+
+        SELECTION_STR = (f'SELECT * FROM {question_table} ORDER BY RAND() LIMIT 1')
+
+        cursor.execute(SELECTION_STR)
+        question = cursor.fetchone()
+        
+        conn.close()
+        
+        return question
 
     ### update table information for a horse
     async def update_horse_data(user_id, server_id, data_column, updated_value):
@@ -164,9 +189,9 @@ class Client(commands.Bot):
             cursor = conn.cursor()
             
             #reduce stat values
-            cursor.execute("UPDATE horse_information SET hunger = hunger - 4")
-            cursor.execute("UPDATE horse_information SET thirst = thirst - 5")
-            cursor.execute("UPDATE horse_information SET clean = clean - 3")
+            cursor.execute("UPDATE horse_information SET hunger = hunger - 2")
+            cursor.execute("UPDATE horse_information SET thirst = thirst - 3")
+            cursor.execute("UPDATE horse_information SET clean = clean - 1")
             conn.commit()
 
             #ensure no stat is below zero
@@ -176,7 +201,7 @@ class Client(commands.Bot):
             conn.commit()
 
             #update health based on other values
-            cursor.execute("UPDATE horse_information SET health = health - 4 WHERE hunger <= 5 AND thirst <= 5")
+            cursor.execute("UPDATE horse_information SET health = health - 2 WHERE hunger <= 5 AND thirst <= 5")
             conn.commit()
 
             #ensure health is not below zero
@@ -185,6 +210,10 @@ class Client(commands.Bot):
             cursor.execute("UPDATE horse_information SET money = money + 10 WHERE health = 10")
             cursor.execute("UPDATE horse_information SET bot_pts = bot_pts + 5 WHERE health > 7 AND health < 10")
             cursor.execute("UPDATE horse_information SET bot_pts = bot_pts + 10 WHERE health = 10")
+            conn.commit()
+
+            #reset daily training number
+            cursor.execute("UPDATE horse_information SET daily_trainings = 0")
             conn.commit()
 
             cursor.execute("SELECT COUNT(*) FROM server_data")
@@ -309,6 +338,12 @@ class Client(commands.Bot):
                 data_column = "brush_img"
             case 6:
                 data_column = "treat_img"
+            case 7:
+                data_column = "pet_img"
+            case 8:
+                data_column = "train_img"
+            case 9:
+                data_column = "show_img"
             case _:
                 data_column = ""
 
@@ -366,6 +401,15 @@ class Client(commands.Bot):
             case 6:
                 data_column = "treat_img"
                 array_value = 21
+            case 7:
+                data_column = "pet_img"
+                array_value = 22
+            case 8:
+                data_column = "train_img"
+                array_value = 23
+            case 9:
+                data_column = "show_img"
+                array_value = 24
             case _:
                 data_column = ""
                 array_value = 0
@@ -599,36 +643,18 @@ class Client(commands.Bot):
 
         await Client.update_horse_data(user_id, server_id, "clean", clean_total)                
         if horse_data[8] < 10:
-            if overclean:
-                await Client.update_user_points(user_id, server_id, "bot", 1)
-            else:
-                await Client.update_user_points(user_id, server_id, "bot", clean_amount)
+            await Client.update_user_points(user_id, server_id, "bot", clean_amount)
 
         message = ""
-        if overclean:
-            match clean_amount:
-                case 1: #light brushing
-                    message = f'You lightly groom {horse_data[3]}. You find that {PRONOUNS_LOW[horse_data[4],2]} coat is already spotless.'
-                case 2: #good grooming
-                    message = f'You start to do a through groom of {horse_data[3]}... but find that {PRONOUNS_LOW[horse_data[4],1]} doesn\'t need it. {PRONOUNS_CAP[horse_data[4],0]} has remained clean since {PRONOUNS_LOW[horse_data[4],2]} last grooming.'
-                case 3: #braid mane and tail
-                    message = f'You get out the braiding tools... but then remember that you braided {PRONOUNS_LOW[horse_data[4],2]} hair yesterday. {horse_data[3]} gives you a mocking look.'
-                case 4: #full body bath
-                    message = f'{horse_data[3]} stands nicely for a bath even though {PRONOUNS_LOW[horse_data[4],0]} doesn\'t need it. {PRONOUNS_CAP[horse_data[4],1]} shivers from the cold and catches a little cold.'
-                    updated_health = horse_data[5] - 1
-                    if updated_health < 0:
-                        updated_health = 0
-                    await Client.update_horse_data(user_id, server_id, "health", updated_health) 
-        else:
-            match clean_amount:
-                case 1:
-                    message = f'{horse_data[3]} leans into you while you lightly brush {PRONOUNS_LOW[horse_data[4],1]}. You can feel the love. :heart:'
-                case 2:
-                    message = f'You throughly clean {horse_data[3]}. {PRONOUNS_CAP[horse_data[4],0]} loves every moment of the process.'
-                case 3:
-                    message = f'While {horse_data[3]} struggles to stand still for the braiding, you eventually finish putting {PRONOUNS_LOW[horse_data[4],2]} hair into the protective styles.'
-                case 4:
-                    message = f'You spend the afternoon bathing {horse_data[3]}. {PRONOUNS_CAP[horse_data[4],0]} now is sparkling and beautiful.'
+        match clean_amount:
+            case 1:
+                message = f'{horse_data[3]} leans into you while you lightly brush {PRONOUNS_LOW[horse_data[4],1]}. You can feel the love. :heart:'
+            case 2:
+                message = f'You throughly clean {horse_data[3]}. {PRONOUNS_CAP[horse_data[4],0]} loves every moment of the process.'
+            case 3:
+                message = f'While {horse_data[3]} struggles to stand still for the braiding, you eventually finish putting {PRONOUNS_LOW[horse_data[4],2]} hair into the protective styles.'
+            case 4:
+                message = f'You spend the afternoon bathing {horse_data[3]}. {PRONOUNS_CAP[horse_data[4],0]} now is sparkling and beautiful.'
 
         if clean_total == 10 and overclean == False:
             message += f'\n\n{horse_data[3]} is looking perfect! {PRONOUNS_CAP[horse_data[4],0]} is completely clean!'
@@ -637,7 +663,7 @@ class Client(commands.Bot):
         else:
             message += f'\n\n{horse_data[3]} is happy to be getting this attention!.'
            
-        #message += f'\n\n Addition - {clean_amount} \nOG Value - {horse_data[5]} \nNew Total = {clean_total} \nOver Health - {overclean}'
+        message += f'\n\n Addition - {clean_amount} \nOG Value - {horse_data[5]} \nNew Total = {clean_total} \nOver Health - {overclean}'
 
         title = f'You have groomed {horse_data[3]}.'
         embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
@@ -649,10 +675,8 @@ class Client(commands.Bot):
              embed.set_image(url = horse_data[20])
 
         footer = ""
-        if clean_total == 10 and overclean == False:
+        if clean_total == 10:
             footer = f'{horse_data[3]} is completely clean!'
-        elif clean_total == 10 and overclean == True:
-            footer = f'{horse_data[3]} had extra grooming done to {PRONOUNS_LOW[horse_data[4],1]} that {PRONOUNS_LOW[horse_data[4],0]} didn\'t need. {PRONOUNS_CAP[horse_data[4],0]} is sad.'
         else:
             footer = f'{horse_data[3]} still needs to regain {10-clean_total} clean points.'
         embed.set_footer(text=footer)
@@ -678,25 +702,275 @@ class Client(commands.Bot):
         
         await channel.send(embed=embed)
 
+    ### Update the discipline_level of a user
+    async def discipline_level(user_id, server_id, horse_data, discipline):
+        # Disciplines:
+        ### 0 - Dressage -- balance_sk / flex_sk / agility_sk
+        ### 1 - Show Jumping -- balance_sk / power_sk / agility_sk
+        ### 2 - Barrel Racing -- power_sk / flex_sk / agility_sk
+        ### 3 - Western Pleasure -- balance_sk / flex_sk / power_sk
+        conn = connect_db()
+        cursor = conn.cursor()
+
+        new_dis_level = 0.0
+        sk_1 = 0.0
+        sk_2 = 0.0
+        sk_3 = 0.0
+
+        match discipline:
+            case 0:
+                sk_1 = horse_data[26] / 10
+                sk_2 = horse_data[29] / 10
+                sk_3 = horse_data[27] / 10
+            case 1:
+                sk_1 = horse_data[26] / 10
+                sk_2 = horse_data[28] / 10
+                sk_3 = horse_data[27] / 10
+            case 2:
+                sk_1 = horse_data[28] / 10
+                sk_2 = horse_data[29] / 10
+                sk_3 = horse_data[27] / 10
+            case 3:
+                sk_1 = horse_data[26] / 10
+                sk_2 = horse_data[29] / 10
+                sk_3 = horse_data[28] / 10
+        
+        new_dis_level = sk_1 + sk_2 + sk_3
+
+        QUERY_STR = (f"UPDATE horse_information SET dis_level = %s WHERE user_id = %s AND server_id = %s")
+            
+        cursor.execute(QUERY_STR, (new_dis_level, user_id, server_id))
+        conn.commit()
+            #print(f"The good query: {QUERY_STR}")
+
+        conn.close()
+
+    ### Set the score for the show
+    async def show_score(user_id, server_id, horse_data, correct):
+        conn = connect_db()
+        cursor = conn.cursor()
+
+        dis_level = horse_data[31]
+        additions = random.randrange(0, 2)
+        if correct:
+            additions += random.randrange(2, 5)
+        else:
+            additions += random.randrange(1, 3)
+        
+        show_level = dis_level + additions
+
+        QUERY_STR = (f"UPDATE horse_information SET show_score = %s WHERE user_id = %s AND server_id = %s")
+            
+        cursor.execute(QUERY_STR, (show_level, user_id, server_id))
+        conn.commit()
+            #print(f"The good query: {QUERY_STR}")
+
+        conn.close()
+
+    ### Run the shows
+    async def run_show(server_id, discipline):
+        conn = connect_db()
+        cursor = conn.cursor()
+
+        SELECTION_STR = (f'SELECT user_id, horse_name, show_score FROM horse_information WHERE server_id = {server_id} AND show_score > 0 AND discipline = {discipline} ORDER BY show_score DESC')
+        #print(f'Horse Data Query: {SELECTION_STR}')
+        cursor.execute(SELECTION_STR)
+        scoreboard = cursor.fetchmany(8)
+        
+        conn.close()
+        
+        return scoreboard
+
+    ### Clear all show related scores
+    async def clear_show_scores(server_id):
+        conn = connect_db()
+        cursor = conn.cursor()
+
+        score_query = f'UPDATE horse_information SET show_score = 0 WHERE server_id = {server_id}'
+        is_query = f'UPDATE horse_information SET is_showing = 0 WHERE server_id = {server_id}'
+
+        cursor.execute(score_query)
+        cursor.execute(is_query)
+        conn.commit()
+        
+        conn.close()
+
+
 ####################################################################################################
 ################################# UPDATE HORSE STATS EVERY 12 HOURS #################################
     @tasks.loop(hours=12)
     async def stats_update(self):
         result = await Client.daily_horse_update()
-        message = ""
+        console_message = ""
 
         if result == "":
-            message = (f'An error occurred while trying to run the update to all horse stats.')
+            console_message = (f'An error occurred while trying to run the update to all horse stats.')
 
         else:
             #print(result)
-            message = (f'The stats of {result[1]} horses have been successfully updated across {result[0]} servers.')
-        
-        print(message)
+            console_message = (f'The stats of {result[1]} horses have been successfully updated across {result[0]} servers.')
+         
+        print(console_message)
+
+        counter = 0        
+        try:
+            for guild in client.guilds:
+                counter += 1
+                server_id = guild.id
+                server_data = await Client.get_server_data(server_id)
+                for channel in guild.channels:
+                    if channel.id == server_data[4]:
+                        role = guild.get_role(server_data[3])
+                        message = f'{role.mention} - Stats have been updated.'
+                        await channel.send(f'{message}', allowed_mentions=discord.AllowedMentions(roles=True))
+                    elif channel.id == server_data[5]:
+                        role = guild.get_role(server_data[6])
+                        message = f'Hello {role.mention}! The barn has been updated and your horses would like some attention!'
+                        await channel.send(f'{message}', allowed_mentions=discord.AllowedMentions(roles=True))
+    
+        except:
+            server_count = await Client.count_servers()
+            print(f'Aparently there was an error sending messages about the horse update....')
+            print(f'Messages sent in {counter} out of {server_count[0]} servers.')
         
     @stats_update.before_loop
     async def before_my_task(self):
             await self.wait_until_ready()
+
+####################################################################################################
+################################# RUN HORSE SHOWS EVERY 24 HOURS #################################
+    @tasks.loop(hours=24)
+    async def run_the_shows(self):
+        servers = client.guilds
+        counter = 0
+        try:
+            for guild in servers:
+                counter += 1
+                server_id = guild.id
+                server_data = await Client.get_server_data(server_id)
+                channel = guild.get_channel(server_data[5])
+
+                dressage = await Client.run_show(server_id, 0)
+                jumping = await Client.run_show(server_id, 1)
+                rodeo = await Client.run_show(server_id, 2)
+                pleasure = await Client.run_show(server_id, 3)
+
+                title = ":trophy: Daily Horse Show Results! :trophy:"
+                content = f'Congratulations to all the winners of our daily show!\n'
+                embed = discord.Embed(title=title, description=content, color= BOT_COLOR)
+
+                shows_ran = 0
+                show = ""
+
+                show_pts = [0, 24, 21, 18, 15, 12, 9, 6, 3]
+                show_money = [0, 15, 12, 9, 6, 3, 2, 1, 1]
+
+                if dressage:
+                    placement = 1
+                    shows_ran += 1
+                    show = "Dressage"
+                    message = ""
+
+                    for L in dressage:
+                        user_name = await client.fetch_user(L[0])
+                        message += f'{placement}. {user_name.mention} and {L[1]} - {L[2]} pts\n'
+                        await Client.update_user_money(L[0], server_id, show_money[placement])
+                        await Client.update_user_points(L[0], server_id, "server", show_pts[placement])
+                        placement += 1
+                    embed.add_field(name=":gem: Dressage :gem:", value=message)
+                
+                if jumping:
+                    placement = 1
+                    shows_ran += 1
+                    show = "Show Jumping"
+                    message = ""
+
+                    for L in jumping:
+                        user_name = await client.fetch_user(L[0])
+                        message += f'{placement}. {user_name.mention} and {L[1]} - {L[2]} pts\n'
+                        await Client.update_user_money(L[0], server_id, show_money[placement])
+                        await Client.update_user_points(L[0], server_id, "server", show_pts[placement]) 
+                        placement += 1
+                    embed.add_field(name=":wing: Show Jumping :wing:", value=message)
+                
+                if rodeo:
+                    placement = 1
+                    shows_ran += 1
+                    show = "Barrel Racing"
+                    message = ""
+
+                    for L in rodeo:
+                        user_name = await client.fetch_user(L[0])
+                        message += f'{placement}. {user_name.mention} and {L[1]} - {L[2]} pts\n'
+                        await Client.update_user_money(L[0], server_id, show_money[placement])
+                        await Client.update_user_points(L[0], server_id, "server", show_pts[placement]) 
+                        placement += 1
+                    embed.add_field(name=":racehorse: Barrel Racing :racehorse:", value=message)
+
+                if pleasure:
+                    placement = 1
+                    shows_ran += 1
+                    show = "Western Pleasure"
+                    message = ""
+
+                    for L in pleasure:
+                        user_name = await client.fetch_user(L[0])
+                        message += f'{placement}. {user_name.mention} and {L[1]} - {L[2]} pts\n'
+                        await Client.update_user_money(L[0], server_id, show_money[placement])
+                        await Client.update_user_points(L[0], server_id, "server", show_pts[placement]) 
+                        placement += 1
+                    embed.add_field(name=":carousel_horse: Western Pleasure :carousel_horse:", value=message)
+                
+                embed.set_footer(text=BOT_CREDITS)
+                
+                next_show_val = random.randrange(0, 3)
+                next_show = ""
+                match next_show_val:
+                    case 0:
+                        next_show = "Dressage"
+                    case 1:
+                        next_show = "Show Jumping"
+                    case 2:
+                        next_show = "Barrel Racing"
+                    case 3:
+                        next_show = "Western Pleasure"
+                        
+                await Client.update_server_data(server_id, "daily_dis_class", next_show_val)
+
+                show_title = f':rosette: Today\'s Show - {next_show} :rosette:'
+                show_message = f'Enter today\'s {next_show} using the \'/entershow\' command. If your horse isn\'t registered as a {next_show} horse, use the \'setdiscipline\' command!'
+                embed.add_field(name= show_title, value= show_message, inline=False)
+
+                for channel in guild.channels:
+                    if channel.id == server_data[4]: #admin
+                        role = guild.get_role(server_data[3])
+                        if shows_ran > 0:
+                            message = f'{role.mention} - A {show} show has been run in your server.'
+                        else:
+                            message = f'No shows were run in your server. There were no entries yesterday.'
+                        await channel.send(f'{message}', allowed_mentions=discord.AllowedMentions(roles=True))
+                    elif channel.id == server_data[5]: #to players
+                        role = guild.get_role(server_data[6])
+                        message = f'There was no entries for yesterday\'s show... if you want to enter today\'s {next_show} show, use \'/entershow\' '
+                        if shows_ran > 0:
+                            await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
+                        else:
+                            await channel.send(message)
+                    else:
+                        pass
+                    
+                await Client.clear_show_scores(server_id)
+                print(f'completed show run for {server_data[1]}')
+        except:
+            server_count = await Client.count_servers()
+            print(f'Aparently there was an error running the shows....')
+            print(f'Shows ran in {counter} out of {server_count[0]} servers.')
+        
+        
+    @run_the_shows.before_loop
+    async def before_my_task(self):
+            await self.wait_until_ready()
+
 
 ###################################################################################
 ################################# BOT SET UP CODE #################################
@@ -720,6 +994,7 @@ GUILD_ID = discord.Object(id=SERVER)
 ### help on user commands
 @client.tree.command(name="helpinformation", description="Get information on the StableCare bot", guild=GUILD_ID)
 async def informationMessage(interaction: discord.Interaction):
+    server_data = await Client.get_server_data(interaction.guild.id)
     horse_data = await Client.gather_all_horse_data(interaction.user.id, interaction.guild.id)
     message = ""
     title = ""
@@ -795,7 +1070,11 @@ async def informationMessage(interaction: discord.Interaction):
     
     
     embed.set_footer(text=BOT_CREDITS)
-    await interaction.response.send_message(embed=embed)
+
+    channel = interaction.guild.get_channel(server_data[5])
+    if not(interaction.channel_id == server_data[5]):
+        await interaction.response.send_message(f'I sent the response to your request in the StableCare bot channel :horse::heart: - {channel.mention}', ephemeral= True)
+    await channel.send(embed=embed)
 
 ### help on the admin specific commands
 @client.tree.command(name="helpinformationadmin", description="Admin - Information for the server moderators for this bot.", guild=GUILD_ID)
@@ -814,8 +1093,8 @@ async def admininformation(interaction: discord.Interaction):
                 
                 title = f'Moderator Information for StableCare'
                 message = (
-                    f'As of right now, users interact with this bot using slash commands. Each users can have one horse per server.' + f'\n' +
-                    f'Horses will need to have their stats cared for using these slash commands. The stats for the horse will drop every 6 hours automatically.' + f'\n' +
+                    f'Each users can have one horse per server.' + f'\n' +
+                    f'Horses will need to have their stats cared for using the slash commands and the related drop down menus that populate. The stats for the horse will drop every 12 hours automatically. You should be notified when these updates occur.' + f'\n' +
                     
                     f'\nThese are the moderator specific commands you have for this bot!'
                            )
@@ -825,10 +1104,10 @@ async def admininformation(interaction: discord.Interaction):
                 #embed.add_field(name="", value="", inline=False)
                 embed.add_field(name=":horse: Register a Horse for a User :horse:", value="You can run the /createaponyadmin command to register a horse for a user.", inline=False)
                 embed.add_field(name=":camera_with_flash: Set/Remove Custom Image for a User :camera_with_flash:", value="You can run the /customimagesadmin command to add or update a custom image associated with a user's account. The '/removeimagesadmin' command will erase all custom images for a user. You see more information in /helpcustomimages.\n", inline=False)
-                embed.add_field(name=":scissors: Remove a User's Data :scissors:", value="If you need to remove the data of any user in your server, you can do so with the '/removedatauseradmin' command. It will require two confirmations and the user's ID that you want to remove.\n", inline=False)
+                embed.add_field(name=":scissors: Remove a User's Data :scissors:", value="If you need to remove the data of any user in your server, you can do so with the '/removedatauseradmin' command. It will require two confirmations.\n", inline=False)
                 embed.add_field(name=":coin: Give Users Server Points :coin:", value="You can run the /serverpointsadmin command to add (or subtract by using a negative value) points to a user's account. You can use these however you want within your server.\n", inline=False)
                 embed.add_field(name=":dollar: Give Users Server Money :dollar:", value="By running the '/servermoneyadmin' command, you can add (or subtract using a negative value) to a user's account. Right now server money has no purpose.\n", inline=False)
-                embed.add_field(name=":books: Update Server Information :books:", value="You can update the moderation role and the logging channel by running the '/updateserveradmin' command. You will need the role and/or channel ID for this command. You don't have to update both at one time, putting '0' for an option will not update the role/channel.\n", inline=False)
+                embed.add_field(name=":books: Update Server Information :books:", value="You can update the roles and channels used by the bot by running the '/updateserveradmin' command. You don't have to update all of the values when this command is run.\n", inline=False)
                 embed.add_field(name=":wastebasket: Removing the Bot and Data :wastebasket:", value="To remove the bot and erase all user data, first have a user with the Bot Moderation Role run the '/removedataserveradmin' command and complete the three confirmations for removal. After a confirmation of data removal has been set to the Logging Channel, you can safely kick the bot from your server.\n", inline=False)
                 
                 embed.set_footer(text=BOT_CREDITS)
@@ -845,8 +1124,8 @@ async def admininformation(interaction: discord.Interaction):
             await interaction.response.send_message(NO_SERVER_ERROR_MESSAGE, ephemeral = True)
 
 ### help  on custom images
-@client.tree.command(name="helpcustomimages", description="Get information pn how to use custom images", guild=GUILD_ID)
-async def informationMessage(interaction: discord.Interaction):
+@client.tree.command(name="helpcustomimages", description="Get information on how to use custom images", guild=GUILD_ID)
+async def informationPhotos(interaction: discord.Interaction):
     about_message = (
             f'You have the option to set your own custom images for your horse. To set a custom image for one of the interactions, use the \'/customimages\' command.'+
             f'\n\nImages must be given in URL format. These urls must be the exact URL for just the image, not a webpage the image is on.\n'
@@ -861,14 +1140,17 @@ async def informationMessage(interaction: discord.Interaction):
     )
 
     image_message = ( 
-            f'There are 7 different types of custom images you can set. For \'image_type\', enter one of the following options.'+
+            f'There are 9 different types of custom images you can set. For \'image_type\', enter one of the following options.'+
             f'\n0 - Standard reference image' + 
             f'\n1 - Happy reference image (pefect stats)' + 
             f'\n2 - Sad reference image (low stats)' + 
             f'\n3 - Eating interaction image' + 
             f'\n4 - Drinking interaction image' + 
             f'\n5 - Brushing interaction image' + 
-            f'\n6 - Treat feeding interaction image\n' 
+            f'\n6 - Treat feeding interaction image\n' +
+            f'\n7 - Petting interaction image\n' +
+            f'\n8 - Training image\n' +
+            f'\n9 - Competition/Show image\n' 
     )
     where_message = (
         f'If you have set any custom image, they will completely override the use of the preset images. It is recommended to start with the standard reference image so that your checkin with your pony will have an image.\n'
@@ -881,20 +1163,82 @@ async def informationMessage(interaction: discord.Interaction):
     embed.add_field(name=":dividers: Custom Image Types :dividers:", value=image_message, inline=False)
     embed.add_field(name=":question: Where did the check in picture go? :question:", value=where_message, inline=False)
     embed.set_footer(text=BOT_CREDITS)
-    await interaction.response.send_message(embed=embed) 
+    
+    server_data = await Client.get_server_data(interaction.guild.id)
+    channel = interaction.guild.get_channel(server_data[5])
+    if not(interaction.channel_id == server_data[5]):
+        await interaction.response.send_message(f'I sent the response to your request in the StableCare bot channel :horse::heart: - {channel.mention}', ephemeral= True)
+    await channel.send(embed=embed)
 
+### help on the showing and training
+@client.tree.command(name="helptraining", description="Get information about training your pony.", guild=GUILD_ID)
+async def informationTraining(interaction: discord.Interaction):
+    title = f':horse_racing: About Horse Training :horse_racing:'
+    about_message = f'We have 4 different skills to train your horse in, **Balance, Flexibility, Power, and Agility**.\nTrain your pony with the \'/trainpony\' command and enter the skill you want to train.'
+
+    embed = discord.Embed(title= title, description=about_message, color= BOT_COLOR)
+
+    embed.add_field(name=":chart_with_upwards_trend: Leveling up :chart_with_upwards_trend:", value="Take your pony out for a ride and brush off your math facts. Answer a math question to level up your pony!", inline=False)
+    embed.add_field(name=":books: Math? ToT :books:", value="The math questions are middle school level and have whole number answers. If you get it wrong, there will be a help guide for the next round. There is also no time limit to answer the question.", inline=False)
+    embed.add_field(name=":zzz: Not all at once :zzz:", value="Your pony can only go on 3 training sessions every barn update. They need breaks, and so do you!", inline=False)
+    embed.add_field(name=":medal: Maxxed skills :medal:", value="Champions practice daily, and so should you! Ponies with maxxed skills can still train in the maxxed skills.", inline=False)
+
+    embed.set_footer(text=BOT_CREDITS)
+    
+    server_data = await Client.get_server_data(interaction.guild.id)
+    channel = interaction.guild.get_channel(server_data[5])
+    if not(interaction.channel_id == server_data[5]):
+        await interaction.response.send_message(f'I sent the response to your request in the StableCare bot channel :horse::heart: - {channel.mention}', ephemeral= True)
+    await channel.send(embed=embed)
+
+@client.tree.command(name="helpshowing", description="Get information about showing your pony.", guild=GUILD_ID)
+async def informationShowing(interaction: discord.Interaction):
+    title = f':trophy: About Horse Showing :trophy:'
+    about_message = (
+        f'We have 4 different disciplines to show your horse in, **Dressage, Show Jumping, Barrel Racing, and Western Pleasure**.' +
+        f'\nEnter your pony in the daily show with the \'/entershow\' command.' +
+        f'\n**Entering a show will consume one training session.** If you have already used all three training sessions, you have to wait for the barn update to register for the show.'
+    )
+
+    embed = discord.Embed(title= title, description=about_message, color= BOT_COLOR)
+
+    dss_message = (
+        f'**Here are the skills that each discipline need.**'+
+        f'\n**Dressage** - Balance, Flexibility, and Agility'+
+        f'\n**Show Jumping** - Balance, Agility, and Power'+
+        f'\n**Barrel Racing** - Flexibility, Agility, and Power'+
+        f'\n**Western Pleasure** - Balance, Flexibility, and Power'
+    )
+
+    embed.add_field(name=":books: Disicipline Specific Skills :books:", value=dss_message, inline=False)
+    embed.add_field(name=":diamond_shape_with_a_dot_inside: Discipline Scores :diamond_shape_with_a_dot_inside:", value="Your pony's skills points related to the discipline are added together to make up the discipline score. This creates the foundation of your show score.", inline=False)
+    embed.add_field(name=":arrows_clockwise: Changing Disciplines :arrows_clockwise:", value="You can change the discipline your pony is registered to at any time with the \'/setdiscipline\' command.", inline=False)
+    embed.add_field(name=":calendar_spiral: Daily Shows :calendar_spiral:", value="Each day (24hrs) a new show will start. It is a random chance what discipline is selected for the daily class.", inline=False)
+    embed.add_field(name=":rosette: Show Scores :rosette:", value="You will answer a math question to try and get a boost to your discipline score for your show score. There are two random values that are also added in to give each show a bit of :sparkles: *spice* :sparkles:", inline=False)
+    embed.add_field(name=":coin: Show Rewards :coin:", value="The top 8 of each show get not only server points but also server money (currently no use).", inline=False)
+    
+
+    embed.set_footer(text=BOT_CREDITS)
+    
+    server_data = await Client.get_server_data(interaction.guild.id)
+    channel = interaction.guild.get_channel(server_data[5])
+    if not(interaction.channel_id == server_data[5]):
+        await interaction.response.send_message(f'I sent the response to your request in the StableCare bot channel :horse::heart: - {channel.mention}', ephemeral= True)
+    await channel.send(embed=embed)
 
 ###########################################################################################################
 ################################# BUILD THE BOT - BOT SET UP AND UPDATING #################################
 @client.tree.command(name="setup", description="Admin - Set up the StableCare bot for your server!", guild=GUILD_ID)
 @app_commands.checks.has_permissions(administrator = True)
-async def setupStableCare(interaction: discord.Interaction, moderation_role_id: str, logging_channel_id: str):
+async def setupStableCare(interaction: discord.Interaction, moderation_role: str, logging_channel: str, interaction_role: str, interaction_channel: str):
     server_id = interaction.guild_id
     server_name = interaction.guild.name
     user_name = interaction.user.display_name
 
-    bot_moderation_role_id = int(moderation_role_id)
-    bot_logging_channel_id = int(logging_channel_id)
+    bot_moderation_role_id = int(moderation_role.replace("<@&", "").replace(">", ""))
+    bot_logging_channel_id = int(logging_channel.replace("<#", "").replace(">", ""))
+    bot_interaction_role_id = int(interaction_role.replace("<@&", "").replace(">", ""))
+    bot_interaction_channel_id = int(interaction_channel.replace("<#", "").replace(">", ""))
 
     log_channel = client.get_channel(bot_logging_channel_id)
 
@@ -909,7 +1253,7 @@ async def setupStableCare(interaction: discord.Interaction, moderation_role_id: 
         try:
             conn = connect_db() 
             cursor = conn.cursor()
-            QUERY = (f"INSERT INTO server_data VALUES ({server_id}, \"{server_name}\", \"{user_name}\", {bot_moderation_role_id}, {bot_logging_channel_id})")
+            QUERY = (f"INSERT INTO server_data VALUES ({server_id}, \"{server_name}\", \"{user_name}\", {bot_moderation_role_id}, {bot_logging_channel_id}, {bot_interaction_channel_id}, {bot_interaction_role_id})")
             print(f'Query = {QUERY}')
             cursor.execute(QUERY)
             conn.commit()
@@ -939,51 +1283,71 @@ async def setupErorr(interaction: discord.Interaction, error):
 async def setupHelp(interaction: discord.Interaction):
     title = f'***Welcome to the StableCare bot!***'
     message = (f'In order to set up this bot, the server owner will need to run the \'/setup\' command.' + "\n\n"
-               f'This bot needs two things to operate correctly. A **bot admin role** and a **logging channel.**'
+               f'This bot needs the following things to operate correctly.'
                )
     embed = discord.Embed(title=title, description=message, color=BOT_COLOR)
 
-    embed.add_field(name="Bot Moderation Role", value="This role is used for giving server specific points, registering horses for others, giving users money, and other elevated bot commands. This role needs no permissions, it is just a tag for the bot to use to ensure the commands are not abused.", inline= False)
-    embed.add_field(name="Bot Logging Channel", value="This channel is where the bot will send logs of horses that are registered, user data that is cleared for the server, and other moderation values. It can be a shared log channel with other bots.", inline= False)
-    embed.add_field(name="Obtaining Role/Channel IDs", value="To find a role or channel ID, you need to have turned on discord developer mode. After this, you can right click on a channel or a role in the server settings page to obtain the role/channel ID.", inline=False)
+    embed.add_field(name="Moderation Role", value="This role is used for giving server specific points, registering horses for others, giving users money, and other elevated bot commands. This role needs no permissions, it is just a tag for the bot to use to ensure the commands are not abused.", inline= False)
+    embed.add_field(name="Logging Channel", value="This channel is where the bot will send logs of horses that are registered, user data that is cleared for the server, and other moderation values. It can be a shared log channel with other bots.", inline= False)
+    embed.add_field(name="Interaction Role", value="This role is used by the bot to tag players when the stats update.", inline= False)
+    embed.add_field(name="Interaction Channel", value="This channel is where the bot will send message and accept slash commands from users.", inline= False)
+    
 
     embed.set_footer(text=BOT_CREDITS)
 
     await interaction.response.send_message(embed=embed)
 
 ### update server data values
-@client.tree.command(name="updateserveradmin", description="Admin - Update server data for this bot. - To not update a role/channel put 0.", guild=GUILD_ID)
-async def updateServer(interaction: discord.Interaction, moderation_role_id: str, logging_channel_id: str):
+@client.tree.command(name="updateserveradmin", description="Admin - Update server data for this bot.", guild=GUILD_ID)
+async def updateServer(interaction: discord.Interaction, moderation_role: str = "0", logging_channel: str = "0", interaction_role: str = "0", interaction_channel: str = "0"):
     server_id = interaction.guild.id
     server_data = await Client.get_server_data(server_id)
     user_name = interaction.user.display_name
     user_roles = interaction.user.roles
     admin_found = False
 
-    bot_moderation_role_id = int(moderation_role_id)
-    bot_logging_channel_id = int(logging_channel_id)
+    bot_moderation_role_id = int(moderation_role.replace("<@&", "").replace(">", ""))
+    bot_logging_channel_id = int(logging_channel.replace("<#", "").replace(">", ""))
+    bot_interaction_role_id = int(interaction_role.replace("<@&", "").replace(">", ""))
+    bot_interaction_channel_id = int(interaction_channel.replace("<#", "").replace(">", ""))
 
     if server_data:
         for role in user_roles:
             if role.id == server_data[3]:
                 admin_found = True
                 log_channel = client.get_channel(server_data[4])
-                log = False
-                mod = False
+                changes = 0
 
                 log_message = f'Update server information command has been run.'
 
                 if bot_moderation_role_id > 0:
-                    mod = True
+                    changes += 1
                     result = await Client.update_server_data(server_id, "admin_role_id", bot_moderation_role_id)
                     role_name = interaction.guild.get_role(bot_moderation_role_id)
                     if result:
-                        log_message += (f'\n{user_name} ran the server update command - The moderation role has been updated to {role_name}.')
+                        log_message += (f'\n{user_name} ran the server update command - The moderation role has been updated to {role_name.mention}.')
                     else:
-                        log_message += (f'\n{user_name} ATTEMPTED to update the server\'s bot admin role to the {role_name}, but something went wrong. If this issue repeats, please contact kyraltre.')
+                        log_message += (f'\n{user_name} ATTEMPTED to update the server\'s bot admin role to the {role_name.mention}, but something went wrong. If this issue repeats, please contact kyraltre.')
 
+                if bot_interaction_role_id > 0:
+                    changes += 1
+                    result = await Client.update_server_data(server_id, "interact_role_id", bot_interaction_role_id)
+                    role_name = interaction.guild.get_role(bot_interaction_role_id)
+                    if result:
+                        log_message += (f'\n{user_name} ran the server update command - The interaction role has been updated to {role_name.mention}.')
+                    else:
+                        log_message += (f'\n{user_name} ATTEMPTED to update the server\'s bot interaction role to the {role_name.mention}, but something went wrong. If this issue repeats, please contact kyraltre.')
+
+                if bot_interaction_channel_id > 0:
+                    changes += 1
+                    result = await Client.update_server_data(server_id, "interact_channel", bot_interaction_channel_id)
+                    if result:
+                        log_message += (f'\n{user_name} ran the server update command - The interaction channel was changed to the <#{bot_interaction_channel_id}> channel.')
+                    else:
+                        log_message += (f'\n{user_name} ATTEMPTED to update the server\'s bot interaction channel, but something went wrong. If this issue repeats, please contact kyraltre.')
+                
                 if bot_logging_channel_id > 0:
-                    log = True
+                    changes += 1
                     result = await Client.update_server_data(server_id, "log_channel", bot_logging_channel_id)
                     new_log_channel = client.get_channel(bot_logging_channel_id)
                     if result:
@@ -991,8 +1355,8 @@ async def updateServer(interaction: discord.Interaction, moderation_role_id: str
                         await new_log_channel.send(f'{user_name} ran the server update command. This is the new logging channel for this bot.')
                     else:
                         log_message += (f'\n{user_name} ATTEMPTED to update the server\'s bot logging channel, but something went wrong. If this issue repeats, please contact kyraltre.')
-                
-                if log == False and mod == False:
+
+                if changes == 0:
                     log_message += (f'\n{user_name} ran the server update command - Nothing was changed.')          
 
                 await log_channel.send(log_message)
@@ -1051,14 +1415,14 @@ async def removeUserData(interaction: discord.Interaction, confirmation_to_remov
 
 ### remove a user's data - admin command
 @client.tree.command(name="removedatauseradmin", description="Admin - remove data for a user from this bot that is connected to this server.", guild=GUILD_ID)
-async def removeUserDataAdmin(interaction: discord.Interaction, confirmation_to_remove_data: str, user_id_to_remove: str, confirm_server_id: str):
+async def removeUserDataAdmin(interaction: discord.Interaction, confirmation_to_remove_data: str, user_to_remove: str, confirm_server_id: str):
     server_id = interaction.guild.id
     server_name = interaction.guild.name
 
     confirmation_server_id = int(confirm_server_id)
-    user_id = int(user_id_to_remove)
+    user_id = int(user_to_remove.replace("<@", "").replace(">", ""))
 
-    user_name = interaction.guild.get_member(user_id)
+    user_name = await client.fetch_user(user_id)
     admin_name = interaction.user.display_name
     user_roles = interaction.user.roles
 
@@ -1191,6 +1555,12 @@ async def setCustomImage(interaction: discord.Interaction, image_type: int, imag
                 image_name = "brushing interaction image"
             case 6:
                 image_name = "treat interaction image"
+            case 7:
+                image_name = "pet interaction image"
+            case 8:
+                image_name = "training image"
+            case 9:
+                image_name = "show image"
 
     if server_data:
         if horse_data:
@@ -1220,12 +1590,12 @@ async def setCustomImage(interaction: discord.Interaction, image_type: int, imag
 
 ###admin version of set custom images
 @client.tree.command(name="customimagesadmin", description="Admin - Set a custom image for another user", guild=GUILD_ID)
-async def setCustomImageAdmin(interaction: discord.Interaction, updating_user_id: str, image_type: int, image_url: str):
+async def setCustomImageAdmin(interaction: discord.Interaction, updating_user: str, image_type: int, image_url: str):
     server_id = interaction.guild.id
     server_name = interaction.guild.name
-    user_id = int(updating_user_id)
+    user_id = int(updating_user.replace("<@", "").replace(">", ""))
 
-    user_name = interaction.guild.get_member(user_id)
+    user_name = await client.fetch_user(user_id)
     admin_name = interaction.user.display_name
     user_roles = interaction.user.roles
 
@@ -1250,6 +1620,12 @@ async def setCustomImageAdmin(interaction: discord.Interaction, updating_user_id
                 image_name = "brushing interaction image"
             case 6:
                 image_name = "treat interaction image"
+            case 7:
+                image_name = "pet interaction image"
+            case 8:
+                image_name = "training image"
+            case 9:
+                image_name = "show image"
 
     if server_data:
         for role in user_roles:
@@ -1310,6 +1686,12 @@ async def setCustomImage(interaction: discord.Interaction, image_type: int):
                 image_name = "brushing interaction image"
             case 6:
                 image_name = "treat interaction image"
+            case 7:
+                image_name = "pet interaction image"
+            case 8:
+                image_name = "training image"
+            case 9:
+                image_name = "show image"
 
     if server_data:
         if horse_data:
@@ -1334,12 +1716,12 @@ async def setCustomImage(interaction: discord.Interaction, image_type: int):
 
 ###admin version of remove custom images
 @client.tree.command(name="removeimagesadmin", description="Admin - REMOVE ALL custom images for another user", guild=GUILD_ID)
-async def setCustomImageAdmin(interaction: discord.Interaction, updating_user_id: str):
+async def setCustomImageAdmin(interaction: discord.Interaction, updating_user: str):
     server_id = interaction.guild.id
     server_name = interaction.guild.name
-    user_id = int(updating_user_id)
+    user_id = int(updating_user.replace("<@", "").replace(">", ""))
 
-    user_name = interaction.guild.get_member(user_id)
+    user_name = await client.fetch_user(user_id)
     admin_name = interaction.user.display_name
     user_roles = interaction.user.roles
 
@@ -1352,18 +1734,18 @@ async def setCustomImageAdmin(interaction: discord.Interaction, updating_user_id
             if role.id == server_data[3]:
                 admin_found = True
                 total = 0
-                for image in range(0,7):
+                for image in range(0,9):
                     results = await Client.remove_custom_image(user_id, server_id, image)
                     if results:
                         total +=1
                             
-                if total == 7:
+                if total == 9:
                     await interaction.response.send_message(f'ALL of {user_name}\'s custom images have been removed.', ephemeral = True)
                     await log_channel.send(f'{admin_name} has has removed ALL custom images belonging to {user_name}\'s horse.')
                 else:
                     print(f'An error occurred while trying remove all images for {user_name} in the {server_name} server ({server_id})')
-                    await log_channel.send(f'An error has occurred while {admin_name} was attempting to remove all images for {user_name} for this server. Only {total} out of a possible 7 images have been cleared. If this repeats, please contact kyraltre.')
-                    await interaction.response.send_message(f'An error occurred while trying to remove all custom images for {user_name}. Only {total} out of a possible 7 images have been cleared. If this issue repeats, please contact kyraltre. Thank you.', ephemeral = True)
+                    await log_channel.send(f'An error has occurred while {admin_name} was attempting to remove all images for {user_name} for this server. Only {total} out of a possible 9 images have been cleared. If this repeats, please contact kyraltre.')
+                    await interaction.response.send_message(f'An error occurred while trying to remove all custom images for {user_name}. Only {total} out of a possible 9 images have been cleared. If this issue repeats, please contact kyraltre. Thank you.', ephemeral = True)
 
                 
                         
@@ -1400,10 +1782,10 @@ async def harpgPoints(interaction: discord.Interaction, points_to_add: int):
 
 ### admin to add server specific points
 @client.tree.command(name="serverpointsadmin", description="Admin - Add server points to a user's horse. A negative value will subtract points.", guild=GUILD_ID)
-async def serverPoints(interaction: discord.Interaction, updating_user_id: str, points_to_add: int):
+async def serverPoints(interaction: discord.Interaction, updating_user: str, points_to_add: int):
     server_id = interaction.guild.id
-    user_id = int(updating_user_id)
-    user_name = interaction.guild.get_member(user_id)
+    user_id = int(updating_user.replace("<@", "").replace(">", ""))
+    user_name = await client.fetch_user(user_id)
     admin_name = interaction.user.display_name
     user_roles = interaction.user.roles
 
@@ -1439,10 +1821,10 @@ async def serverPoints(interaction: discord.Interaction, updating_user_id: str, 
 
 ### admin to add money to a user
 @client.tree.command(name="servermoneyadmin", description="Admin - Add money to a user's account. A negative value will subtract money.", guild=GUILD_ID)
-async def serverMoney(interaction: discord.Interaction, updating_user_id: str, money_to_add: int):
+async def serverMoney(interaction: discord.Interaction, updating_user: str, money_to_add: int):
     server_id = interaction.guild.id
-    user_id = int(updating_user_id)
-    user_name = interaction.guild.get_member(user_id)
+    user_id = int(updating_user.replace("<@", "").replace(">", ""))
+    user_name = await client.fetch_user(user_id)
     admin_name = interaction.user.display_name
     user_roles = interaction.user.roles
 
@@ -1458,7 +1840,7 @@ async def serverMoney(interaction: discord.Interaction, updating_user_id: str, m
             if role.id == server_data[3]:
                 admin_found = True
                 if horse_data:
-                    result = await Client.update_user_points(user_id, server_id, money_to_add)
+                    result = await Client.update_user_money(user_id, server_id, money_to_add)
                     if result:
                         horse_data = await Client.gather_all_horse_data(user_id, server_id)
                         message = f'{user_name}\'s account now has ${horse_data[9]}'
@@ -1497,21 +1879,27 @@ async def leaderboard(interaction: discord.Interaction, leaderboard_type: int):
             message = f'These points are given out by your server\'s moderation team!\n\n'
         case _:
             await interaction.response.send_message(f'Please select a leaderboard type - 0 for Care Points, 1 for Server Points', ephemeral = True)
-    if not(board == ""):
-        leaders = await Client.get_leaderboard(server_id, board)
-        
-        if leaders:
-            placement = 1
-            for L in leaders:
-                message += f'{placement}. {L[0]} and {L[1]} - {L[2]} pts\n' 
-                placement += 1
+    server_data = await Client.get_server_data(server_id)
+    channel = interaction.guild.get_channel(server_data[5])
+    if not(interaction.channel_id == server_data[5]):
+        await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
+    else:
+        if not(board == ""):
+            leaders = await Client.get_leaderboard(server_id, board)
             
+            if leaders:
+                placement = 1
+                for L in leaders:
+                    message += f'{placement}. {L[0]} and {L[1]} - {L[2]} pts\n' 
+                    placement += 1
+                
 
-            embed = discord.Embed(title=title, description=message, color=BOT_COLOR)
-            embed.set_footer(text=BOT_CREDITS)
-            await interaction.response.send_message(embed=embed)
-        else:
-            await interaction.response.send_message(f'The {nice_type} Leaderboard for has no members with points for this server. :cry:', ephemeral = True)
+                embed = discord.Embed(title=title, description=message, color=BOT_COLOR)
+                embed.set_footer(text=BOT_CREDITS)
+
+                await interaction.response.send_message(embed=embed)
+            else:
+                await interaction.response.send_message(f'The {nice_type} Leaderboard for has no members with points for this server. :cry:', ephemeral = True)
 
 
 #####################################################################################################
@@ -1532,61 +1920,68 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
     
     if server_data:
         log_channel = client.get_channel(server_data[4])
-        if pony_gender > 2 or pony_gender < 0:
-            await interaction.response.send_message(f'Please try again and properly select a gender for your pony (0-2)', ephemeral = True)
+        channel = interaction.guild.get_channel(server_data[5])
+        if not(interaction.channel_id == server_data[5]):
+            await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
         else:
-            coat = random.randrange(1, 7)
-            user_id = interaction.user.id
-            user_name = interaction.user.display_name
-            conn = connect_db() #connect to the database
-            cursor = conn.cursor() #start work on the database. cursor will be the action to move through the database
-            
-            # Check if the user already exists in the database - cursor.execute will run a sql fn in the database
-            cursor.execute(f"SELECT * FROM horse_information WHERE user_id = {user_id} AND server_id = {server_id}")
-            user = cursor.fetchone() #fetchone() gets the first row of the results
-
-            cursor.execute(f"SELECT * FROM preset_images WHERE coat_id = {coat}")
-            coat_values = cursor.fetchone()
-
-            if user: #if something was pulled above...
-                await interaction.response.send_message(f'Sorry {interaction.user.display_name}, you already have a horse!', ephemeral = True)
-                await log_channel.send(f'{interaction.user.display_name} attempted to rergister a second horse with the createapony command')
+            if pony_gender > 2 or pony_gender < 0:
+                await interaction.response.send_message(f'Please try again and properly select a gender for your pony (0-2)', ephemeral = True)
             else:
-                # Insert user data into the database
-                #await interaction.response.send_message("The SQL server does not have a horse registered to you.")
-                try:
-                    QUERY = (
-                        f'INSERT INTO horse_information (user_id, server_id, user_name, horse_name, gender, health, hunger, thirst, clean, money, bot_pts, server_pts, harpg_pts, coat, custom_thumb, stand_ref_image, happy_ref_img, sad_ref_img, feed_img, water_img, brush_img, treat_img, serial) '
-                      + f'VALUES ({user_id}, {server_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 7, 7, 7, 7, 30, 10, 0, 0, {coat}, 0, \"\", \"\", \"\", \"\", \"\", \"\", \"\", DEFAULT)' 
-                    )
-                    cursor.execute(QUERY)
-                    conn.commit() #commits the information above to the database to save the addition of information
-                    print(f'A new {coat_values[1]} horse named, {pony_name}, has been registered to {user_name}.')
-                    await log_channel.send(f'{interaction.user.display_name} has registered a new {coat_values[1]} horse named, {pony_name}.')
-                    
-                    message = (f'Congrats! {pony_name} has come home to you! Please take good care of {PRONOUNS_LOW[pony_gender,1]}. :horse:')
+                coat = random.randrange(1, 7)
+                user_id = interaction.user.id
+                user_name = interaction.user.display_name
+                conn = connect_db() #connect to the database
+                cursor = conn.cursor() #start work on the database. cursor will be the action to move through the database
                 
-                    embed = discord.Embed(title="A new horse has arrived!", description=message, color= BOT_COLOR)
-                    embed.set_image(url=coat_values[3])
-                    await interaction.response.send_message(embed=embed)
+                # Check if the user already exists in the database - cursor.execute will run a sql fn in the database
+                cursor.execute(f"SELECT * FROM horse_information WHERE user_id = {user_id} AND server_id = {server_id}")
+                user = cursor.fetchone() #fetchone() gets the first row of the results
 
-                except mysql.connector.Error as e:
-                    print(f'Error occurred while attempting to add a horse for {user_name} in {server_id}: {e}')
-                    await log_channel.send(f'{interaction.user.display_name} has encountered an error while attempting to register a horse.')
-                    await interaction.response.send_message(f'An error has occured while attempting to add your horse to our stable. Please contact an adminstrator for assistance.', ephemeral = True)
+                cursor.execute(f"SELECT * FROM preset_images WHERE coat_id = {coat}")
+                coat_values = cursor.fetchone()
 
-            conn.close() #safely exit the database connection
+                if user: #if something was pulled above...
+                    await interaction.response.send_message(f'Sorry {interaction.user.display_name}, you already have a horse!', ephemeral = True)
+                    await log_channel.send(f'{interaction.user.display_name} attempted to rergister a second horse with the createapony command')
+                else:
+                    # Insert user data into the database
+                    #await interaction.response.send_message("The SQL server does not have a horse registered to you.")
+                    try:
+                        QUERY = (
+                            f'INSERT INTO horse_information (user_id, server_id, user_name, horse_name, gender, health, hunger, thirst, clean, money, bot_pts, server_pts, harpg_pts, coat, custom_thumb, stand_ref_image, happy_ref_img, sad_ref_img, feed_img, water_img, brush_img, treat_img, serial) '
+                        + f'VALUES ({user_id}, {server_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 7, 7, 7, 7, 30, 10, 0, 0, {coat}, 0, \"\", \"\", \"\", \"\", \"\", \"\", \"\", DEFAULT)' 
+                        )
+                        cursor.execute(QUERY)
+                        conn.commit() #commits the information above to the database to save the addition of information
+                        print(f'A new {coat_values[1]} horse named, {pony_name}, has been registered to {user_name}.')
+                        await log_channel.send(f'{interaction.user.display_name} has registered a new {coat_values[1]} horse named, {pony_name}.')
+                        
+                        message = (f'Congrats! {pony_name} has come home to you! Please take good care of {PRONOUNS_LOW[pony_gender,1]}. :horse:')
+                    
+                        embed = discord.Embed(title="A new horse has arrived!", description=message, color= BOT_COLOR)
+                        embed.set_image(url=coat_values[3])
+                        
+                        await interaction.response.send_message(embed=embed)
+
+                    except mysql.connector.Error as e:
+                        print(f'Error occurred while attempting to add a horse for {user_name} in {server_id}: {e}')
+                        await log_channel.send(f'{interaction.user.display_name} has encountered an error while attempting to register a horse.')
+                        await interaction.response.send_message(f'An error has occured while attempting to add your horse to our stable. Please contact an adminstrator for assistance.', ephemeral = True)
+
+                conn.close() #safely exit the database connection
 
     else:
         await interaction.response.send_message(f'Your server is not set up to accept horses. Please have a server moderator set up the bot. Thank you!', ephemeral = True)
 
 ##SET UP A HORSE - ADMIN FOR ANOTHER USER
 @client.tree.command(name="createponyadmin", description="Admin - Pony Set Up | Unique Discord User ID needed | Gender: 0-M 1-S 2-G", guild=GUILD_ID)
-async def createAPonyADMIN(interaction: discord.Interaction, updating_user_id: str, user_name: str, pony_name: str, pony_gender : int):
+async def createAPonyADMIN(interaction: discord.Interaction, updating_user: str, pony_name: str, pony_gender : int):
     server_id = interaction.guild.id
     server_data = await Client.get_server_data(server_id)
     user_roles = interaction.user.roles
-    user_id = int(updating_user_id)
+
+    user_id = int(updating_user.replace("<@", "").replace(">", ""))
+    user_name = await client.fetch_user(user_id)
     admin_found = False
 
     if server_data:
@@ -1607,7 +2002,7 @@ async def createAPonyADMIN(interaction: discord.Interaction, updating_user_id: s
                     user = cursor.fetchone() 
 
                     if user: 
-                        await interaction.response.send_message(f'{user_name} already has a horse!')
+                        await interaction.response.send_message(f'{user_name} already has a horse!', ephemeral= True)
                         await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command - unsucessful - {user_name} already had a horse')
                     else:
                         try:
@@ -1617,12 +2012,12 @@ async def createAPonyADMIN(interaction: discord.Interaction, updating_user_id: s
                             )
                             cursor.execute(QUERY)
                             conn.commit() 
-                            await interaction.response.send_message(f'{pony_name} has been registered to {user_name}')
+                            await interaction.response.send_message(f'{pony_name} has been registered to {user_name}', ephemeral= True)
                             await log_channel.send(f'{interaction.user.display_name} ran the admin create a pony command to register a horse to {user_name}')
                         except mysql.connector.Error as e:
                             print(f'Error occurred while attempting to add a horse for {user_name}: {e}')
                             await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command - unsuccessful - an error occurred while trying to register a horse for {user_name}')
-                            await interaction.response.send_message(f'An error has occured while attempting to register a horse for {user_name}')
+                            await interaction.response.send_message(f'An error has occured while attempting to register a horse for {user_name}', ephemeral= True)
 
                     conn.close() 
         
@@ -1642,222 +2037,135 @@ async def checkPony(interaction: discord.Interaction):
     horse_data = await Client.gather_all_horse_data(user_id, server_id)
 
     if horse_data:
-        coat_values = await Client.gather_coat_values({horse_data[13]})
-        stats_t = f'{horse_data[3]}\'s Care Stats'
-        stats_v = await Client.stat_string(horse_data)
-
-        points_t = f'{horse_data[3]}\'s Points'
-        points_v = (
-            #f'**Money: ** ${horse_data[10]}' + f'\n' +
-            f'**Care Points: ** {horse_data[10]}'
-        )
-
-        if {horse_data[11]} > 0:
-            points_v += f'\n**Server Points: ** {horse_data[11]}'
-        if {horse_data[12]} > 0:
-            points_v += f'\n**HARPG Points: ** {horse_data[12]}'
-
-        pony_name = f"**Name:** {horse_data[3]}"
-        pony_gender = f"**Gender:** {PRONOUNS_CAP[horse_data[4],3]}"
-        message = pony_name + f'\n' + pony_gender
-        footer = f"{horse_data[3]} is happy you stopped by!"
-        image = ""
-
-        #print(f'{horse_data[0]}')
-        if horse_data[14] == 1:
-            if horse_data[8] == 10 and horse_data[7] == 10 and horse_data[6] == 10 and horse_data[5] == 10:
-                #print(f'{horse_data[3]} is happy.')
-                if horse_data[16] == "":
-                    image = horse_data[15]
-                else:
-                    image = horse_data[16]
-            elif horse_data[8] > 5 and horse_data[7] > 4 and horse_data[6] > 5:
-                #print(f'{horse_data[3]} is content.')
-                image = horse_data[15]
-            else:
-                #print(f'{horse_data[3]} is sad.')
-                if horse_data[17] == "":
-                    image = horse_data[15]
-                else:
-                    image = horse_data[17]
+        server_data = await Client.get_server_data(server_id)
+        channel = interaction.guild.get_channel(server_data[5])
+        if not(interaction.channel_id == server_data[5]):
+            await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
         else:
-            if horse_data[8] == 10 and horse_data[7] == 10 and horse_data[6] == 10 and horse_data[5] == 10:
-                #print(f'{horse_data[3]} is happy.')
-                image = coat_values[3]
-            elif horse_data[8] > 5 and horse_data[7] > 4 and horse_data[6] > 5:
-                #print(f'{horse_data[3]} is content.')
-                image = coat_values[2]
-            else:
-                #print(f'{horse_data[3]} is sad.')
-                image = coat_values[4]
-                
+            coat_values = await Client.gather_coat_values({horse_data[13]})
+            stats_t = f'{horse_data[3]}\'s Care Stats'
+            stats_v = await Client.stat_string(horse_data)
 
-        embed = discord.Embed(title="Horse Information", description=message, color= BOT_COLOR)
-        if not(image == ""):
-            embed.set_image(url=image) 
-        embed.set_footer(text=footer)
-        embed.add_field(name=points_t, value=points_v, inline=False)
-        embed.add_field(name=stats_t, value=stats_v, inline= False)
-        await interaction.response.send_message(embed=embed)
+            points_t = f'{horse_data[3]}\'s Points'
+            points_v = (
+                #f'**Money: ** ${horse_data[10]}' + f'\n' +
+                f'**Care Points: ** {horse_data[10]}'
+            )
+            if horse_data[11] > 0:
+                points_v += f'\n**Server Points: ** {horse_data[11]}'
+            if horse_data[12] > 0:
+                points_v += f'\n**HARPG Points: ** {horse_data[12]}'
 
-    else:
-        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+            skills_t = f'{horse_data[3]}\'s Discipline and Skills'
 
-
-################################################################################################
-################################# OUTDATED HORSE CARE COMMANDS #################################
-""" @client.tree.command(name="treats", description="Give your pony a treat. Type in whatever treat you want to feed your pony!", guild=GUILD_ID)
-async def treatSnacking(interaction: discord.Interaction, treat_type: str):
-    user_id = interaction.user.id
-    server_id = interaction.guild.id
-    horse_data = await Client.gather_all_horse_data(user_id, server_id)
-    
-    if horse_data:
-        if horse_data[7] < 10:
-            await Client.update_user_points(user_id, server_id, "bot", 10)
-
-        message = (f'{horse_data[3]} snacks on {treat_type}. {PRONOUNS_CAP[horse_data[4],0]} loved it!')
-        title = f'Giving {horse_data[3]} Treats'
-        embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
-
-        if horse_data[14] == 0:
-            coat_values = await Client.gather_coat_values(horse_data[13])
-            embed.set_image(url = coat_values[8])
-        if horse_data[14] == 1 and not(horse_data[21] == ""):
-             embed.set_image(url = horse_data[21])
-
-        await interaction.response.send_message(embed=embed)
-    else:
-        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral = True)  
-
-@client.tree.command(name="feed", description="Feed your pony. Type in whatever hay type and pounds you want to feed your pony", guild=GUILD_ID)
-async def foodTime(interaction: discord.Interaction, feed_type: str, feed_amount: int):
-    user_id = interaction.user.id
-    server_id = interaction.guild.id
-    horse_data = await Client.gather_all_horse_data(user_id, server_id)
-    
-    if horse_data:
-        await Client.update_horse_data(user_id, server_id, "hunger", 10)
-        if horse_data[6] < 10:
-            await Client.update_user_points(user_id, server_id, "bot", 10)
-
-        message = (f'You feed {horse_data[3]} {feed_amount}lbs of {feed_type}. {PRONOUNS_CAP[horse_data[4],0]} is full and satisfied.')
-        title = f'Feeding {horse_data[3]}'
-        embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
-
-        if horse_data[14] == 0:
-            coat_values = await Client.gather_coat_values(horse_data[13])
-            embed.set_image(url = coat_values[6])
-        if horse_data[14] == 1 and not(horse_data[18] == ""):
-             embed.set_image(url = horse_data[18])
-
-        footer = f'{horse_data[3]} is now not hungry!'
-        embed.set_footer(text=footer)
-        await interaction.response.send_message(embed=embed)
-        #await log_channel.send(f'{interaction.user.display_name} has feed their horse.')
-    else:
-        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
-        #await log_channel.send(f'{interaction.user.display_name} attempted to feed a horse they dont have.')
-
-@client.tree.command(name="water", description="Fills your pony's water bucket", guild=GUILD_ID)
-async def waterTime(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    server_id = interaction.guild.id
-    horse_data = await Client.gather_all_horse_data(user_id, server_id)
-    
-    #print(f'{horse_data}')
-    if horse_data:
-        await Client.update_horse_data(user_id, server_id, "thirst", 10)
-        if horse_data[7] < 10:
-            await Client.update_user_points(user_id, server_id, "bot", 10)
-
-        message = (f'{horse_data[3]}\'s water bucket is now full. {PRONOUNS_CAP[horse_data[4],0]} takes a nice long sip.')
-        title = f'Filling {horse_data[3]}\'s Water'
-        embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
-
-        if horse_data[14] == 0:
-            coat_values = await Client.gather_coat_values(horse_data[13])
-            embed.set_image(url = coat_values[7])
-        if horse_data[14] == 1 and not(horse_data[19] == ""):
-             embed.set_image(url = horse_data[19])
-
-        footer = f'{horse_data[3]} is now not thirsty!'
-        embed.set_footer(text=footer)
-        await interaction.response.send_message(embed=embed)
-    else:
-        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
-
-@client.tree.command(name="brush", description="Brush your pony's coat", guild=GUILD_ID)
-async def brushTime(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    server_id = interaction.guild.id
-    horse_data = await Client.gather_all_horse_data(user_id, server_id)
-    
-    #print(f'{horse_data}')      
-    if horse_data:
-        if horse_data[8] < 10:
-            await Client.update_user_points(user_id, server_id, "bot", 10)
-
-        await Client.update_horse_data(user_id, server_id, "clean", 10)
-
-        message = (f'{horse_data[3]} enjoys being brushed. {PRONOUNS_CAP[horse_data[4],2]} coat is now spotless!')
-        title = f'Brushing {horse_data[3]}'
-        embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
-
-        if horse_data[14] == 0:
-            coat_values = await Client.gather_coat_values(horse_data[13])
-            embed.set_image(url = coat_values[5])
-        if horse_data[14] == 1 and not(horse_data[20] == ""):
-             embed.set_image(url = horse_data[20])
-
-        footer = f'{horse_data[3]} is now at full cleanliness!'
-        embed.set_footer(text=footer)
-        await interaction.response.send_message(embed=embed)
-    else:
-        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
-
-@client.tree.command(name="vetcare", description="Heal your pony. Services Menu: 1-Vaccines 2-Dental 3-Check up", guild=GUILD_ID)
-async def vetServices(interaction: discord.Interaction, vet_services: int):
-    if vet_services > 3 or vet_services < 1:
-        await interaction.response.send_message("The vet can't provide services if you don't select any. Please select a service from the list (1-3)", ephemeral = True)
-    
-    else:
-        user_id = interaction.user.id
-        server_id = interaction.guild.id
-        horse_data = await Client.gather_all_horse_data(user_id, server_id)
-                
-        if horse_data:
-            if horse_data[5] < 10:
-                await Client.update_user_points(user_id, server_id, "bot", 10)
-
-            await Client.update_horse_data(user_id, server_id, "health", 10)
-            
-            #print(f'{horse_data[3]}: {PRONOUNS_CAP[horse_data[4],2]} health is {horse_data[5]}')
-            message = ""
-            footer = f'{horse_data[3]} is now at full health!'
-            match vet_services:
+            dis_name = ""
+            match horse_data[30]:
+                case 0:
+                    dis_name = "Dressage"
                 case 1:
-                    message = (f'{horse_data[3]} stood for {PRONOUNS_LOW[horse_data[4],2]} shots. {PRONOUNS_CAP[horse_data[4],0]} was a very brave pony!')
+                    dis_name = "Show Jumping"
                 case 2:
-                    message = (f'The dental floating went well. {PRONOUNS_CAP[horse_data[4],2]} teeth are nice and flat now, no more mouth issues for {horse_data[3]}!')
+                    dis_name = "Barrel Racing"
                 case 3:
-                    message = (f'The vet did a once over on {horse_data[3]}. They said {horse_data[3]} is the picture of health!')
-                case _:
-                    message = ("The vet can't provide services if you don't select any. Please select a service from the list (1-3)")
-                    footer = ""
+                    dis_name = "Western Pleasure"
+
+            has_shown = ""
+            match horse_data[32]:
+                case 0:
+                    has_shown = f'{horse_data[3]} has *not* been entered in a show today.'
+                case 1:
+                    has_shown = f'{horse_data[3]} has been entered in today\'s show.'
+
+            skills_v = (
+                f'**Discipline: ** {dis_name} \n'+
+                f'**Discipline Score: ** {horse_data[31]}\n\n'
+                f'**Balance: ** {horse_data[26]}\n'+
+                f'**Agility: ** {horse_data[27]}\n'+
+                f'**Power: ** {horse_data[28]}\n'+
+                f'**Flexibility: ** {horse_data[29]}\n\n' +
+                f'{horse_data[3]} can do {3-horse_data[33]} training sessions right now.\n' +
+                f'{has_shown}'
+            )
+
+            pony_name = f"**Name:** {horse_data[3]}"
+            pony_gender = f"**Gender:** {PRONOUNS_CAP[horse_data[4],3]}"
+            message = pony_name + f'\n' + pony_gender
+            footer = f"{horse_data[3]} is happy you stopped by!"
+            image = ""
+
+            #print(f'{horse_data[0]}')
+            if horse_data[14] == 1:
+                if horse_data[8] == 10 and horse_data[7] == 10 and horse_data[6] == 10 and horse_data[5] == 10:
+                    #print(f'{horse_data[3]} is happy.')
+                    if horse_data[16] == "":
+                        image = horse_data[15]
+                    else:
+                        image = horse_data[16]
+                elif horse_data[8] > 5 and horse_data[7] > 4 and horse_data[6] > 5:
+                    #print(f'{horse_data[3]} is content.')
+                    image = horse_data[15]
+                else:
+                    #print(f'{horse_data[3]} is sad.')
+                    if horse_data[17] == "":
+                        image = horse_data[15]
+                    else:
+                        image = horse_data[17]
+            else:
+                if horse_data[8] == 10 and horse_data[7] == 10 and horse_data[6] == 10 and horse_data[5] == 10:
+                    #print(f'{horse_data[3]} is happy.')
+                    image = coat_values[3]
+                elif horse_data[8] > 5 and horse_data[7] > 4 and horse_data[6] > 5:
+                    #print(f'{horse_data[3]} is content.')
+                    image = coat_values[2]
+                else:
+                    #print(f'{horse_data[3]} is sad.')
+                    image = coat_values[4]
                     
-            embed = discord.Embed(title="Vet Visit", description=message, color= BOT_COLOR)
+
+            embed = discord.Embed(title="Horse Information", description=message, color= BOT_COLOR)
+            if not(image == ""):
+                embed.set_image(url=image) 
             embed.set_footer(text=footer)
-            await interaction.response.send_message(embed=embed)
-        else:
-            await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
- """
+            embed.add_field(name=points_t, value=points_v, inline= False)
+            embed.add_field(name=skills_t, value=skills_v, inline= False)
+            embed.add_field(name=stats_t, value=stats_v, inline= False)
+            
+            await interaction.response.send_message(embed=embed)         
+
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+
+
 ####################################################################################
 ################################# HORSE CARE MENUS #################################
 ####################################################################################
-# Defines a custom Select containing colour options
-# that the user can choose. The callback function
-# of this class is called when the user changes their choice
+################################# Pets #################################
+@client.tree.command(name="petpony", description="Pet your pony", guild=GUILD_ID)
+async def pettingPony(interaction: discord.Interaction):
+     user_id = interaction.user.id
+     server_id = interaction.guild.id
+     horse_data = await Client.gather_all_horse_data(user_id, server_id)
+     server_data = await Client.get_server_data(server_id)
+     channel = interaction.guild.get_channel(server_data[5])
+     if not(interaction.channel_id == server_data[5]):
+         await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
+     else:
+         if horse_data:
+             message = (f'{horse_data[3]} enjoys being petted. {PRONOUNS_CAP[horse_data[4],0]} loves the attention')
+             title = f'Petting {horse_data[3]}'
+             embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
+ 
+             if horse_data[14] == 0:
+                coat_values = await Client.gather_coat_values(horse_data[13])
+                embed.set_image(url = coat_values[9])
+             if horse_data[14] == 1 and not(horse_data[22] == ""):
+                 embed.set_image(url = horse_data[22])
+
+             await interaction.response.send_message(embed=embed)
+         else:
+             await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+
+
 ################################# Food #################################
 class FoodDropdown(discord.ui.Select):
     def __init__(self):
@@ -1924,7 +2232,12 @@ async def food(interaction: discord.Interaction):
         else:
             message = (f'Time to feed {horse_data[3]}! {PRONOUNS_CAP[horse_data[4],0]} needs {10-horse_data[6]} pounds of food.')
         # Sending a message containing our view
-        await interaction.response.send_message(message, view=view, delete_after=30)
+        server_data = await Client.get_server_data(server_id)
+        channel = interaction.guild.get_channel(server_data[5])
+        if not(interaction.channel_id == server_data[5]):
+            await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
+        else:
+            interaction.response.send_message(message, view=view, delete_after=30)
     else:
         await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
@@ -1980,7 +2293,12 @@ async def water(interaction: discord.Interaction):
             message = (f'Are you sure you want to add water to {horse_data[3]}\'s bucket? {PRONOUNS_CAP[horse_data[4],2]} water bucket is full right now.')
         else:
             message = (f'Time to add water to {horse_data[3]}\'s bucket! {PRONOUNS_CAP[horse_data[4],0]} needs {10-horse_data[7]} gallons of water.')
-        await interaction.response.send_message(message, view=view, delete_after=30)
+        server_data = await Client.get_server_data(server_id)
+        channel = interaction.guild.get_channel(server_data[5])
+        if not(interaction.channel_id == server_data[5]):
+            await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
+        else:
+            interaction.response.send_message(message, view=view, delete_after=30)
     else:
         await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
@@ -2035,7 +2353,12 @@ async def vet(interaction: discord.Interaction):
             message = (f'Are you sure you want call out the vet? {horse_data[3]} is at full health.')
         else:
             message = (f'Time to call {horse_data[3]}\'s vet! {PRONOUNS_CAP[horse_data[4],0]} needs to regain {10-horse_data[5]} health points.')
-        await interaction.response.send_message(message, view=view, delete_after=30)
+        server_data = await Client.get_server_data(server_id)
+        channel = interaction.guild.get_channel(server_data[5])
+        if not(interaction.channel_id == server_data[5]):
+            await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
+        else:
+            interaction.response.send_message(message, view=view, delete_after=30)
     else:
         await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
@@ -2089,7 +2412,13 @@ async def groom(interaction: discord.Interaction):
             message = (f'Are you sure you want to groom {horse_data[3]}? {PRONOUNS_CAP[horse_data[4],0]} is perfectly.')
         else:
             message = (f'Time to groom {horse_data[3]}! {PRONOUNS_CAP[horse_data[4],0]} needs to regain {10-horse_data[8]} cleanliness points.')
-        await interaction.response.send_message(message, view=view, delete_after=30)
+        
+        server_data = await Client.get_server_data(server_id)
+        channel = interaction.guild.get_channel(server_data[5])
+        if not(interaction.channel_id == server_data[5]):
+            await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
+        else:
+            await interaction.response.send_message(message, view=view, delete_after=30)
     else:
         await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
@@ -2140,7 +2469,403 @@ async def treat(interaction: discord.Interaction):
         
     if horse_data:
         message = (f'Time to give {horse_data[3]} a treat!')
-        await interaction.response.send_message(message, view=view, delete_after=30)
+        server_data = await Client.get_server_data(server_id)
+        channel = interaction.guild.get_channel(server_data[5])
+        if not(interaction.channel_id == server_data[5]):
+            await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
+        else:
+            await interaction.response.send_message(message, view=view, delete_after=30)
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+
+
+####################################################################################
+################################# TRAINING COMMANDS #################################
+####################################################################################
+################################# Pets #################################
+### Disciplines:
+##### 0 - Dressage -- balance_sk / flex_sk / agility_sk
+##### 1 - Show Jumping -- balance_sk / power_sk / agility_sk
+##### 2 - Barrel Racing -- power_sk / flex_sk / agility_sk
+##### 3 - Western Pleasure -- balance_sk / flex_sk / power_sk
+@client.tree.command(name="trainpony", description="Train your pony in Flexibility, Balance, Power, or Agility.", guild=GUILD_ID)
+async def trainPony(interaction: discord.Interaction, skill_to_train: str):
+    user_id = interaction.user.id
+    server_id = interaction.guild.id
+    horse_data = await Client.gather_all_horse_data(user_id, server_id)
+    
+    skill_to_train = skill_to_train.lower()
+    column = ""
+    skill_name = ""
+    array_value = 0
+    match skill_to_train:
+        case "balance":
+            column = "balance_sk"
+            skill_name = "Balance"
+            array_value = 26
+        case "agility":
+            column = "agility_sk"
+            skill_name = "Agility"
+            array_value = 27
+        case "speed":
+            column = "agility_sk"
+            skill_name = "Agility"
+            array_value = 27
+        case "jump":
+            column = "power_sk"
+            skill_name = "Power"
+            array_value = 28
+        case "jumping":
+            column = "power_sk"
+            skill_name = "Power"
+            array_value = 28
+        case "power":
+            column = "power_sk"
+            skill_name = "Power"
+            array_value = 28
+        case "flex":
+            column = "flex_sk"
+            skill_name = "Flexibility"
+            array_value = 29
+        case "flexibility":
+            column = "flex_sk"
+            skill_name = "Flexibility"
+            array_value = 29    
+
+    if horse_data:
+        server_data = await Client.get_server_data(server_id)
+        channel = interaction.guild.get_channel(server_data[5])
+        if not(interaction.channel_id == server_data[5]):
+            await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
+        else:
+            if horse_data[33] == 3:
+                await interaction.response.send_message(f'{horse_data[3]}, has already had 3 training sessions. {PRONOUNS_CAP[horse_data[4], 0]} needs a rest. {PRONOUNS_CAP[horse_data[4], 0]} can do more training sessions after the barn update.', ephemeral= True)
+
+            else:
+                if array_value == 0:
+                    await interaction.response.send_message(f'The skills you can train are Balance, Agility (Speed), Power (Jumping), and Flexibility. Please select one of these options to train {horse_data[3]} in.', ephemeral= True)
+
+                else:
+                    await interaction.response.send_message(f'Heading out for a ride...', ephemeral= True)
+
+                    skill_level = horse_data[array_value]
+                    level = 0
+                    lvl_up_msg = ""
+                    if skill_level >= 0 or skill_level < 11:
+                        level = 1
+                        lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} needs {10-skill_level} more points to level up.'
+                    if skill_level >= 10 or skill_level < 21:
+                        level = 2
+                        lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} needs {20-skill_level} more points to level up.'
+                    if skill_level >= 20 or skill_level < 30:
+                        level = 3
+                        lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} needs {30-skill_level} more points to level up.'
+                    if skill_level == 30:
+                        level = 3
+                        lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} is maxxed out in this skill... but {horse_data[3]} is welcome to continue to practice {PRONOUNS_LOW[horse_data[4], 2]} {skill_name.lower()} skill!'
+                    
+                    question = await Client.get_question(level)
+                    
+                    title = f'Time to train {horse_data[3]} in the {skill_name} skill!'
+                    content = (
+                        f'\n\n{horse_data[3]} is level {level} in {skill_name}.' +
+                        f'\n{lvl_up_msg}' +
+                        f'\n\n**Answer the below question to train {horse_data[3]}.**' +
+                        f'\n{question[1]}'
+                    )
+                    embed = discord.Embed(title=title, description=content, color= BOT_COLOR)
+                    
+                    embed.set_footer(text="All answers are whole numbers (positive or negative). Only type a number.")
+
+                    await channel.send(embed=embed)
+
+                    def check(m):
+                        return m.author == interaction.user and m.channel == channel
+
+                    msg = await client.wait_for('message', check=check)
+                    
+                    if msg.content == str(question[2]):
+                        new_skl_lvl = skill_level + 1
+                        if new_skl_lvl > 30:
+                            new_skl_lvl = 30
+                        await Client.update_horse_data(user_id, server_id, column, new_skl_lvl)
+                        await Client.discipline_level(user_id, server_id, horse_data, horse_data[30])
+
+                        title = f'{horse_data[3]} improved {PRONOUNS_LOW[horse_data[4], 2]} {skill_name} skill!'
+                        content = f'Congrats! You and {horse_data[3]} had a great ride and improved in {skill_name}.'
+                        
+                        if new_skl_lvl == 10 or new_skl_lvl == 20:
+                            content += f'\n\n{horse_data[3]} has leveled up in {skill_name}!'
+                        elif new_skl_lvl == 30:
+                            content += f'\n\n{horse_data[3]} has maxxed out {PRONOUNS_LOW[horse_data[4], 2]} {skill_name} skill! {PRONOUNS_CAP[horse_data[4], 2]} is happy to continue practicing {PRONOUNS_LOW[horse_data[4], 2]} {skill_name.lower()} but can\'t gain any more skill points.'
+                        else:
+                            next_lvl = (level * 10) - new_skl_lvl
+                            content += f'\n\n{horse_data[3]} needs {next_lvl} more skill points to level up.'
+
+                    else:
+                        title = f'{horse_data[3]} had a bad ride.'
+                        content = (
+                            f'Unfortunately, {horse_data[3]} wasn\'t able to learn enough in this ride to gain a skill point in {skill_name}. Hopefully, the next ride will be better!'
+                        )
+                        next_lvl = (level * 10) - skill_level
+                        content += f'\n\n{horse_data[3]} needs {next_lvl} more skill points to level up.'
+                        content += f'\n\nYou attempted question {question[0]} of Level {level}.'
+                        content += f'\nThe correct answer was: {question[2]}'
+                        if level > 1:
+                            help_text = str(question[3])
+                            content += f'\n{help_text}'
+                            content += f'\nYou got it next time for sure!'
+                        else:
+                            content += f'\nRemeber your math facts, you got it next time!'
+
+                    trainings = horse_data[33] + 1
+                    await Client.update_horse_data(user_id, server_id, "daily_trainings", trainings)
+                    
+                    embed = discord.Embed(title=title, description=content, color= BOT_COLOR)
+                    
+                    if horse_data[14] == 0:
+                        coat_values = await Client.gather_coat_values(horse_data[13])
+                        embed.set_image(url = coat_values[10])
+                    if horse_data[14] == 1 and not(horse_data[23] == ""):
+                        embed.set_image(url = horse_data[23])
+                    
+                    footer = ""
+                    if horse_data[33] == 2:
+                        footer = f'{horse_data[3]} can not do more training sessions right now. {PRONOUNS_CAP[horse_data[4], 0]} needs a rest. {PRONOUNS_CAP[horse_data[4], 0]} can do more training sessions after the barn update.'
+                    else:
+                        footer = f'{horse_data[3]} can do {2-horse_data[33]} more training sessions right now.'
+                    embed.set_footer(text=footer)
+
+                    await channel.send(embed=embed)
+
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+
+
+@client.tree.command(name="setdiscipline", description="Select your pony's job - Dressage, Jumping, Rodeo, or Pleasure.", guild=GUILD_ID)
+async def setDiscipline(interaction: discord.Interaction, discipline: str):
+    user_id = interaction.user.id
+    server_id = interaction.guild.id
+    horse_data = await Client.gather_all_horse_data(user_id, server_id)
+    choice = -1
+    discipline = discipline.lower()
+    dis_name = ""
+    match discipline:
+        case "dressage":
+            choice = 0
+            dis_name = "Dressage"
+        case "dance":
+            choice = 0
+            dis_name = "Dressage"
+        case "jumping":
+            choice = 1
+            dis_name = "Show Jumping"
+        case "cross country":
+            choice = 1
+            dis_name = "Show Jumping"
+        case "show jumping":
+            choice = 1
+            dis_name = "Show Jumping"
+        case "hunter":
+            choice = 1
+            dis_name = "Show Jumping"
+        case "hunter jumper":
+            choice = 1
+            dis_name = "Show Jumping"
+        case "rodeo":
+            choice = 2
+            dis_name = "Barrel Racing"
+        case "pole bending":
+            choice = 2
+            dis_name = "Barrel Racing"
+        case "barrel racing":
+            choice = 2
+            dis_name = "Barrel Racing"
+        case "racing":
+            choice = 2
+            dis_name = "Barrel Racing"
+        case "wp":
+            choice = 3
+            dis_name = "Western Pleasure"
+        case "western":
+            choice = 3
+            dis_name = "Western Pleasure"
+        case "pleasure":
+            choice = 3
+            dis_name = "Western Pleasure"
+        case "western pleasure":
+            choice = 3
+            dis_name = "Western Pleasure"
+    
+    if horse_data:
+        if choice == -1:
+            await interaction.response.send_message("Please select one of our disciplines - Dressage, Show Jumping, Barrel Racing (Rodeo), or Western Pleasure.", ephemeral=True)
+        else:
+            await Client.update_horse_data(user_id, server_id, "discipline", choice)
+            await Client.discipline_level(user_id, server_id, horse_data, choice)
+
+            horse_data = await Client.gather_all_horse_data(user_id, server_id)
+            
+            content = (
+                f'**{horse_data[3]} has been registered as a {dis_name} pony!**'+
+                f'\n{PRONOUNS_CAP[horse_data[4],0]} has a base {dis_name} stat level of {horse_data[31]}.'
+            )               
+            
+            await interaction.response.send_message(content, ephemeral=True)
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+        
+
+@client.tree.command(name="entershow", description="Enter into today's horse show!", guild=GUILD_ID)
+async def enterShow(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    server_id = interaction.guild.id
+    horse_data = await Client.gather_all_horse_data(user_id, server_id)
+    server_data = await Client.get_server_data(server_id)
+
+    clase_name = ""
+    match server_data[7]:
+        case 0:
+            clase_name = "Dressage"
+        case 1:
+            clase_name = "Show Jumping"
+        case 2:
+            clase_name = "Barrel Racing"
+        case 3:
+            clase_name = "Western Pleasure"
+
+    choice_skill = random.randrange(1, 3)
+    class_skill_value = -1
+    match horse_data[30]:
+        case 0:
+            match choice_skill:
+                case 1:
+                    class_skill_value = horse_data[26]
+                case 2:
+                    class_skill_value = horse_data[29]
+                case 3:
+                    class_skill_value = horse_data[27]
+        case 1:
+            match choice_skill:
+                case 1:
+                    class_skill_value = horse_data[26]
+                case 2:
+                    class_skill_value = horse_data[28]
+                case 3:
+                    class_skill_value = horse_data[27]
+        case 2:
+            match choice_skill:
+                case 1:
+                    class_skill_value = horse_data[28]
+                case 2:
+                    class_skill_value = horse_data[29]
+                case 3:
+                    class_skill_value = horse_data[27]
+        case 3:
+            match choice_skill:
+                case 1:
+                    class_skill_value = horse_data[26]
+                case 2:
+                    class_skill_value = horse_data[29]
+                case 3:
+                    class_skill_value = horse_data[28] 
+
+
+    if horse_data:
+        channel = interaction.guild.get_channel(server_data[5])
+        if not(interaction.channel_id == server_data[5]):
+            await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
+        else:
+            if horse_data[32] == 1:
+                    await interaction.response.send_message(f'{horse_data[3]} is already entered in today\'s {clase_name} show!', ephemeral= True)
+            else:
+                if horse_data[33] == 3:
+                    await interaction.response.send_message(f'{horse_data[3]}, has already had 3 training sessions. {PRONOUNS_CAP[horse_data[4], 0]} is too tired to show right now. {PRONOUNS_CAP[horse_data[4], 0]} can enter after the barn update.', ephemeral= True)
+
+                else:
+                    if not(horse_data[30] == server_data[7]):
+                        message = (
+                            f'Today\'s is a {clase_name} show, and {horse_data[3]} is not registered as a {clase_name} horse.' +
+                            f'\nTo enter {horse_data[3]} in today\'s {clase_name} show, change {PRONOUNS_LOW[horse_data[4], 2]} discipline through the \'/setdiscipline\' command.'
+                        )
+                        await interaction.response.send_message(message, ephemeral= True)
+
+                    else:
+                        await interaction.response.send_message(f'Hauling out for a show...', ephemeral= True)
+                        skip = False
+                        correct = False
+
+                        level = 0
+                        if class_skill_value >= 0 or class_skill_value < 11:
+                            level = 1
+                        if class_skill_value >= 10 or class_skill_value < 21:
+                            level = 2
+                        if class_skill_value >= 20:
+                            level = 3
+
+                        question = await Client.get_question(level)
+                        
+                        title = f'Enter {horse_data[3]} into a {clase_name} Show!'
+                        content = (
+                            f'\n\n{horse_data[3]} has a starting {clase_name} stat of {horse_data[31]}.' +
+                            f'\nAnswering the show question will earn you extra points to help your score!' +
+                            f'\nHaving second thoughts? Type \'Exit\' to not enter {horse_data[3]} in today\'s show.'+
+                            f'\n\n**Answer the below question to enter {horse_data[3]} in the show.**' +
+                            f'\n{question[1]}'
+                        )
+                        embed = discord.Embed(title=title, description=content, color= BOT_COLOR)
+                        
+                        embed.set_footer(text="All answers are whole numbers (positive or negative). Only type a number.")
+
+                        await channel.send(embed=embed, )
+
+                        def check(m):
+                            return m.author == interaction.user and m.channel == channel
+
+                        msg = await client.wait_for('message', check=check)
+                        
+                        if msg.content == str(question[2]):
+                            correct = True
+                            title = f'{horse_data[3]} is excellently warmed up!'
+                            content = f'You and {horse_data[3]} have a great warm up ride, giving {horse_data[3]} a temporary boost to {PRONOUNS_LOW[horse_data[4],2]} {clase_name} skills!'
+                            
+
+                        elif msg.content.lower() == "exit":
+                            skip = True
+                            await channel.send(f'You decide to scratch {horse_data[3]} from the class. You and {horse_data[3]} have a blast cheering on your friends!')
+
+                        else:
+                            title = f'{horse_data[3]} is ready to ride.'
+                            content = f'You and {horse_data[3]} have an okay warm up ride... could have been better but its okay. You know that you and {horse_data[3]} are going to try your best and that is enough. :heart:'
+
+                            content += f'\n\nYou attempted question {question[0]} of Level {level}.'
+                            content += f'\nThe correct answer was: {question[2]}'
+                            if level > 1:
+                                help_text = str(question[3])
+                                content += f'\n{help_text}'
+                                content += f'\nYou got it next time for sure!'
+                            else:
+                                content += f'\nRemeber your math facts, you got it next time!'
+
+                        
+                        embed = discord.Embed(title=title, description=content, color= BOT_COLOR)
+                        
+                        if horse_data[14] == 0:
+                            coat_values = await Client.gather_coat_values(horse_data[13])
+                            embed.set_image(url = coat_values[11])
+                        if horse_data[14] == 1 and not(horse_data[24] == ""):
+                            embed.set_image(url = horse_data[24])
+                        
+                        footer = f'{horse_data[3]} has been entered into the {clase_name} show!'
+                        embed.set_footer(text=footer)
+                        
+                        if not skip:
+                            trainings = horse_data[33] + 1
+                            await Client.update_horse_data(user_id, server_id, "daily_trainings", trainings)
+                            await Client.update_horse_data(user_id, server_id, "is_showing", 1)
+                            await Client.show_score(user_id, server_id, horse_data, correct)
+                            await channel.send(embed=embed)
+
     else:
         await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
