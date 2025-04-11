@@ -8,8 +8,8 @@ from discord.ext import commands
 from discord.ext import tasks
 from discord import app_commands
 
-from functions.data_pull import *
-from functions.stats import *
+from fn_data_pull import *
+from fn_stats import *
 
 SERVER = 0 #add testing discord server id here
 BOT_COLOR = discord.Color.from_str("#81A6EE")
@@ -18,7 +18,7 @@ NO_HORSE_ERROR_MESSAGE = f'Sorry, we don\'t have a horse registered to you in ou
 NO_SERVER_ERROR_MESSAGE = f'Sorry, your server isn\'t set up with this bot. Please have the server owner run the \'/setup\' command.'
 BOT_CREDITS = f'This bot was made in collaboration between kyraltre and MoonFlower. We thank you for using our bot!'
 
-
+ 
 def connect_db():
     return mysql.connector.connect(
         #Database Values
@@ -83,11 +83,8 @@ class Client(commands.Bot):
         title = f'You feed {horse_data[3]} {selection_str}.'
         embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
 
-        if horse_data[14] == 0:
-            coat_values = await gather_coat_values(horse_data[13])
-            embed.set_image(url = coat_values[6])
-        if horse_data[14] == 1 and not(horse_data[18] == ""):
-            embed.set_image(url = horse_data[18])
+        image_url = await fetch_image(horse_data, 3)
+        embed.set_image(url = image_url)
 
         footer = ""
         if food_total == 10 and overfed == False:
@@ -134,11 +131,8 @@ class Client(commands.Bot):
         title = f'You fill {horse_data[3]}\'s water bucket with {selection_str}.'
         embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
 
-        if horse_data[14] == 0:
-            coat_values = await gather_coat_values(horse_data[13])
-            embed.set_image(url = coat_values[7])
-        if horse_data[14] == 1 and not(horse_data[19] == ""):
-            embed.set_image(url = horse_data[19])
+        image_url = await fetch_image(horse_data, 4)
+        embed.set_image(url = image_url)
 
         footer = ""
         if water_total == 10 and overwatered == False:
@@ -257,11 +251,8 @@ class Client(commands.Bot):
         title = f'You have groomed {horse_data[3]}.'
         embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
 
-        if horse_data[14] == 0:
-            coat_values = await gather_coat_values(horse_data[13])
-            embed.set_image(url = coat_values[5])
-        if horse_data[14] == 1 and not(horse_data[20] == ""):
-                embed.set_image(url = horse_data[20])
+        image_url = await fetch_image(horse_data, 5)
+        embed.set_image(url = image_url)
 
         footer = ""
         if clean_total == 10:
@@ -280,14 +271,16 @@ class Client(commands.Bot):
         treat_low = selection_str.lower()
         message = f'{PRONOUNS_CAP[horse_data[4], 0]} happily takes the {treat_low} from you. {horse_data[3]} loves it and nickers happily at you!'
         
-        title = f'You give {horse_data[3]} a {selection_str}.'
+        title = ""
+        if selection_str.startswith(VOWELS):
+            title = f'You give {horse_data[3]} an {selection_str}.'
+        else:
+            title = f'You give {horse_data[3]} a {selection_str}.'
+            
         embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
 
-        if horse_data[14] == 0:
-            coat_values = await gather_coat_values(horse_data[13])
-            embed.set_image(url = coat_values[8])
-        if horse_data[14] == 1 and not(horse_data[21] == ""):
-                embed.set_image(url = horse_data[21])
+        image_url = await fetch_image(horse_data, 6)
+        embed.set_image(url = image_url)
         
         await channel.send(embed=embed)
 
@@ -1296,7 +1289,8 @@ async def serverPoints(interaction: discord.Interaction, updating_user: str, poi
 
 ### admin to add money to a user
 @client.tree.command(name="servermoneyadmin", description="Admin - Add money to a user's account. A negative value will subtract money.", guild=GUILD_ID)
-async def serverMoney(interaction: discord.Interaction, updating_user: str, money_to_add: int):rver_id = interaction.guild.id
+async def serverMoney(interaction: discord.Interaction, updating_user: str, money_to_add: int):
+    server_id = interaction.guild.id
     user_id = int(updating_user.replace("<@", "").replace(">", ""))
     user_name = await client.fetch_user(user_id)
     admin_name = interaction.user.display_name
@@ -1384,6 +1378,8 @@ async def leaderboard(interaction: discord.Interaction, leaderboard_type: int):
 PRONOUNS_LOW = np.array([["she", "her", "her", "mare"], ["he", "him", "his", "stallion"], ["he", "him", "his", "gelding"]])
 PRONOUNS_CAP = np.array([["She", "Her", "Her", "Mare"], ["He", "Him", "His", "Stallion"], ["He", "Him", "His", "Gelding"]])
 
+VOWELS = ('a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U')
+
 #######################################################################################
 ################################# REGISTER NEW HORSES #################################
 ##SET UP A HORSE FOR YOURSELF
@@ -1409,12 +1405,12 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
                 
                 # Check if the user already exists in the database - cursor.execute will run a sql fn in the database
                 cursor.execute(f"SELECT * FROM horse_information WHERE user_id = {user_id} AND server_id = {server_id}")
-                user = cursor.fetchone() #fetchone() gets the first row of the results
+                horse = cursor.fetchone() #fetchone() gets the first row of the results
 
                 cursor.execute(f"SELECT * FROM preset_images WHERE coat_id = {coat}")
                 coat_values = cursor.fetchone()
 
-                if user: #if something was pulled above...
+                if horse: #if something was pulled above...
                     await interaction.response.send_message(f'Sorry {interaction.user.display_name}, you already have a horse!', ephemeral = True)
                     await log_channel.send(f'{interaction.user.display_name} attempted to rergister a second horse with the createapony command')
                 else:
@@ -1567,33 +1563,15 @@ async def checkPony(interaction: discord.Interaction):
             footer = f"{horse_data[3]} is happy you stopped by!"
             image = ""
 
-            #print(f'{horse_data[0]}')
-            if horse_data[14] == 1:
-                if horse_data[8] == 10 and horse_data[7] == 10 and horse_data[6] == 10 and horse_data[5] == 10:
-                    #print(f'{horse_data[3]} is happy.')
-                    if horse_data[16] == "":
-                        image = horse_data[15]
-                    else:
-                        image = horse_data[16]
-                elif horse_data[8] > 5 and horse_data[7] > 4 and horse_data[6] > 5:
-                    #print(f'{horse_data[3]} is content.')
-                    image = horse_data[15]
-                else:
-                    #print(f'{horse_data[3]} is sad.')
-                    if horse_data[17] == "":
-                        image = horse_data[15]
-                    else:
-                        image = horse_data[17]
+            if horse_data[8] == 10 and horse_data[7] == 10 and horse_data[6] == 10 and horse_data[5] == 10:
+                #HAPPY
+                image = await fetch_image(horse_data, 1)
+            elif horse_data[8] > 5 and horse_data[7] > 4 and horse_data[6] > 5:
+                #CONTENT
+                image = await fetch_image(horse_data, 0)
             else:
-                if horse_data[8] == 10 and horse_data[7] == 10 and horse_data[6] == 10 and horse_data[5] == 10:
-                    #print(f'{horse_data[3]} is happy.')
-                    image = coat_values[3]
-                elif horse_data[8] > 5 and horse_data[7] > 4 and horse_data[6] > 5:
-                    #print(f'{horse_data[3]} is content.')
-                    image = coat_values[2]
-                else:
-                    #print(f'{horse_data[3]} is sad.')
-                    image = coat_values[4]
+                #SAD
+                image = await fetch_image(horse_data, 2)
                     
 
             embed = discord.Embed(title="Horse Information", description=message, color= BOT_COLOR)
@@ -1629,11 +1607,8 @@ async def pettingPony(interaction: discord.Interaction):
              title = f'Petting {horse_data[3]}'
              embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
  
-             if horse_data[14] == 0:
-                coat_values = await gather_coat_values(horse_data[13])
-                embed.set_image(url = coat_values[9])
-             if horse_data[14] == 1 and not(horse_data[22] == ""):
-                 embed.set_image(url = horse_data[22])
+             image_url = await fetch_image(horse_data, 7)
+             embed.set_image(url = image_url)
 
              await interaction.response.send_message(embed=embed)
          else:
@@ -1647,10 +1622,15 @@ class FoodDropdown(discord.ui.Select):
         # Set the options that will be presented inside the dropdown
         options = [
             discord.SelectOption(label='1 lb of Grain', emoji='🧺'),
-            discord.SelectOption(label='2 lbs of Orchard hay', emoji='🌿'),
-            discord.SelectOption(label='3 lbs of Timothy', emoji='🌾'),
+            discord.SelectOption(label='2 lbs of Beet Pulp Mash', emoji='🧺'),
+            discord.SelectOption(label='3 lbs of Timothy', emoji='🌿'),
             discord.SelectOption(label='4 lbs of Clover hay', emoji='☘️'),
             discord.SelectOption(label='5 lbs of Alfalfa', emoji='🥬'),
+            discord.SelectOption(label='6 lb of Mixed Grass hay', emoji='🌾'),
+            discord.SelectOption(label='7 lbs of Orchard hay', emoji='🌿'),
+            discord.SelectOption(label='8 lbs of Timothy', emoji='🌾'),
+            discord.SelectOption(label='9 lbs of Clover hay', emoji='☘️'),
+            discord.SelectOption(label='10 lbs of Alfalfa Mix hay', emoji='🥬'),
         ]
 
         # The placeholder is what will be shown when no option is chosen
@@ -1724,6 +1704,11 @@ class WaterDropdown(discord.ui.Select):
             discord.SelectOption(label='3 gallons of water', emoji='💙'),
             discord.SelectOption(label='4 gallons of water', emoji='🔵'),
             discord.SelectOption(label='5 gallons of water', emoji='🟦'),
+            discord.SelectOption(label='6 gallon of water', emoji='🟦'),
+            discord.SelectOption(label='7 gallons of water', emoji='🔵'),
+            discord.SelectOption(label='8 gallons of water', emoji='💙'),
+            discord.SelectOption(label='9 gallons of water', emoji='🔷'),
+            discord.SelectOption(label='10 gallons of water', emoji='🔹'),
         ]
 
         super().__init__(placeholder='How much water do you add...', min_values=1, max_values=1, options=options)
@@ -1842,7 +1827,7 @@ class GroomingDropdown(discord.ui.Select):
             discord.SelectOption(label='1 pts - Light Brushing', emoji='🧽'),
             discord.SelectOption(label='2 pts - Thorough Groom', emoji='🧼'),
             discord.SelectOption(label='3 pts - Mane and Tail Braiding', emoji='🎀'),
-            discord.SelectOption(label='4 pts - Full Body Bath', emoji='🛁'),
+            discord.SelectOption(label='5 pts - Full Body Bath', emoji='🛁'),
         ]
 
         super().__init__(placeholder='What grooming activity are you doing today...', min_values=1, max_values=1, options=options)
@@ -1900,6 +1885,7 @@ class TreatsDropdown(discord.ui.Select):
 
         options = [
             discord.SelectOption(label='Apple', emoji='🍎'),
+            discord.SelectOption(label='Bananna', emoji='🍎'),
             discord.SelectOption(label='Peppermint', emoji='🍬'),
             discord.SelectOption(label='Sugarcube', emoji='🧊'),
             discord.SelectOption(label='Carrot', emoji='🥕'),
@@ -1955,11 +1941,6 @@ async def treat(interaction: discord.Interaction):
 ################################# TRAINING COMMANDS #################################
 ####################################################################################
 ################################# Pets #################################
-### Disciplines:
-##### 0 - Dressage -- balance_sk / flex_sk / agility_sk
-##### 1 - Show Jumping -- balance_sk / power_sk / agility_sk
-##### 2 - Barrel Racing -- power_sk / flex_sk / agility_sk
-##### 3 - Western Pleasure -- balance_sk / flex_sk / power_sk
 @client.tree.command(name="trainpony", description="Train your pony in Flexibility, Balance, Power, or Agility.", guild=GUILD_ID)
 async def trainPony(interaction: discord.Interaction, skill_to_train: str):
     user_id = interaction.user.id
@@ -2021,29 +2002,26 @@ async def trainPony(interaction: discord.Interaction, skill_to_train: str):
                     await interaction.response.send_message(f'Heading out for a ride...', ephemeral= True)
 
                     skill_level = horse_data[array_value]
-                    level = 0
+                    question = await get_question(skill_level)
+                    level = question[1]
                     lvl_up_msg = ""
-                    if skill_level >= 0 or skill_level < 11:
-                        level = 1
-                        lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} needs {10-skill_level} more points to level up.'
-                    elif skill_level >= 10 or skill_level < 21:
-                        level = 2
-                        lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} needs {20-skill_level} more points to level up.'
-                    elif skill_level >= 20 or skill_level < 30:
-                        level = 3
-                        lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} needs {30-skill_level} more points to level up.'
-                    elif skill_level == 30:
-                        level = 3
-                        lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} is maxxed out in this skill... but {horse_data[3]} is welcome to continue to practice {PRONOUNS_LOW[horse_data[4], 2]} {skill_name.lower()} skill!'
+                    match level:
+                        case 1:
+                            lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} needs {10-skill_level} more points to level up.'
+                        case 2:
+                            lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} needs {20-skill_level} more points to level up.'
+                        case 3:
+                            lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} needs {30-skill_level} more points to level up.'
                     
-                    question = await get_question(level)
+                    if skill_level == 30:
+                        lvl_up_msg = f'{PRONOUNS_CAP[horse_data[4], 0]} is maxxed out in this skill... but {horse_data[3]} is welcome to continue to practice {PRONOUNS_LOW[horse_data[4], 2]} {skill_name.lower()} skill!'                
                     
                     title = f'Time to train {horse_data[3]} in the {skill_name} skill!'
                     content = (
                         f'\n\n{horse_data[3]} is level {level} in {skill_name}.' +
                         f'\n{lvl_up_msg}' +
                         f'\n\n**Answer the below question to train {horse_data[3]}.**' +
-                        f'\n{question[1]}'
+                        f'\n{question[2]}'
                     )
                     embed = discord.Embed(title=title, description=content, color= BOT_COLOR)
                     
@@ -2082,9 +2060,10 @@ async def trainPony(interaction: discord.Interaction, skill_to_train: str):
                         next_lvl = (level * 10) - skill_level
                         content += f'\n\n{horse_data[3]} needs {next_lvl} more skill points to level up.'
                         content += f'\n\nYou attempted question {question[0]} of Level {level}.'
-                        content += f'\nThe correct answer was: {question[2]}'
+                        content += f'\nYour answer was: {msg.content}'
+                        content += f'\nThe correct answer was: {question[3]}'
                         if level > 1:
-                            help_text = str(question[3])
+                            help_text = str(question[4])
                             content += f'\n{help_text}'
                             content += f'\nYou got it next time for sure!'
                         else:
@@ -2095,11 +2074,8 @@ async def trainPony(interaction: discord.Interaction, skill_to_train: str):
                     
                     embed = discord.Embed(title=title, description=content, color= BOT_COLOR)
                     
-                    if horse_data[14] == 0:
-                        coat_values = await gather_coat_values(horse_data[13])
-                        embed.set_image(url = coat_values[10])
-                    if horse_data[14] == 1 and not(horse_data[23] == ""):
-                        embed.set_image(url = horse_data[23])
+                    image_url = await fetch_image(horse_data, 8)
+                    embed.set_image(url = image_url)
                     
                     footer = ""
                     if horse_data[33] == 2:
@@ -2262,26 +2238,17 @@ async def enterShow(interaction: discord.Interaction):
                     await interaction.response.send_message(f'Hauling out for a show...', ephemeral= True)
                     skip = False
                     correct = False
-
-                    level = 0
-                    if class_skill_value >= 0 or class_skill_value < 11:
-                        level = 1
-                    elif class_skill_value >= 10 or class_skill_value < 21:
-                        level = 2
-                    elif class_skill_value >= 20 or class_skill_value < 31:
-                        level = 3
-                    elif class_skill_value >= 30:
-                        level = 3
-
-                    question = await get_question(level)
                     
+                    question = await get_question(class_skill_value)
+                    level = question[1]
+
                     title = f'Enter {horse_data[3]} into a {clase_name} Show!'
                     content = (
                         f'\n\n{horse_data[3]} has a starting {clase_name} stat of {horse_data[31]}.' +
                         f'\nAnswering the show question will earn you extra points to help your score!' +
                         f'\nHaving second thoughts? Type \'Exit\' to not enter {horse_data[3]} in today\'s show.'+
                         f'\n\n**Answer the below question to enter {horse_data[3]} in the show.**' +
-                        f'\n{question[1]}'
+                        f'\n{question[2]}'
                     )
                     embed = discord.Embed(title=title, description=content, color= BOT_COLOR)
                     
@@ -2309,9 +2276,10 @@ async def enterShow(interaction: discord.Interaction):
                         content = f'You and {horse_data[3]} have an okay warm up ride... could have been better but its okay. You know that you and {horse_data[3]} are going to try your best and that is enough. :heart:'
 
                         content += f'\n\nYou attempted question {question[0]} of Level {level}.'
-                        content += f'\nThe correct answer was: {question[2]}'
+                        content += f'\nYour answer was: {msg.content}'
+                        content += f'\nThe correct answer was: {question[3]}'
                         if level > 1:
-                            help_text = str(question[3])
+                            help_text = str(question[4])
                             content += f'\n{help_text}'
                             content += f'\nYou got it next time for sure!'
                         else:
@@ -2320,18 +2288,13 @@ async def enterShow(interaction: discord.Interaction):
                     
                     embed = discord.Embed(title=title, description=content, color= BOT_COLOR)
                     
-                    if horse_data[14] == 0:
-                        coat_values = await gather_coat_values(horse_data[13])
-                        embed.set_image(url = coat_values[11])
-                    if horse_data[14] == 1 and not(horse_data[24] == ""):
-                        embed.set_image(url = horse_data[24])
+                    image_url = await fetch_image(horse_data, 9)
+                    embed.set_image(url = image_url)
                     
                     footer = f'{horse_data[3]} has been entered into the {clase_name} show!'
                     embed.set_footer(text=footer)
                     
                     if not skip:
-                        trainings = horse_data[33] + 1
-                        await update_horse_data(user_id, server_id, "daily_trainings", trainings)
                         await update_horse_data(user_id, server_id, "is_showing", 1)
                         await show_score(user_id, server_id, horse_data, correct)
                         await channel.send(embed=embed)
