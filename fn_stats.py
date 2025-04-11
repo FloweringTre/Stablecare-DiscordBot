@@ -119,3 +119,4 @@ async def fetch_image(horse_data, image_type):
     
     return image_url
 
+

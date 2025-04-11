@@ -19,11 +19,6 @@ NO_SERVER_ERROR_MESSAGE = f'Sorry, your server isn\'t set up with this bot. Plea
 BOT_CREDITS = f'This bot was made in collaboration between kyraltre and MoonFlower. We thank you for using our bot!'
 
  
-def connect_db():
-    return mysql.connector.connect(
-        #Database Values
-             
-    )
 
 #############################################################################
 ################################# FUNCTIONS #################################
@@ -855,25 +850,15 @@ async def removeUserData(interaction: discord.Interaction, confirmation_to_remov
     if server_data:
         if horse_data:
             if confirmation_to_remove_data == "YES":
-                try:
-                    conn = connect_db()
-                    cursor = conn.cursor()
-                    
-                    QUERY = (f'DELETE FROM horse_information WHERE user_id = {user_id} AND server_id = {server_id}')
-                    cursor.execute(QUERY)
-                    conn.commit()
-
-                    conn.close()
-
+                results = await remove_user_data(user_id, server_id)
+                if results == True:
                     print(f'Successfully deleted {user_name}\'s data from the {interaction.guild.name} server ({server_id})')
                     await interaction.response.send_message(f'Your data has been successfully removed from this bot. Thank you for your time with us. :heart:', ephemeral = True)
                     await log_channel.send(f'{user_name} has removed their data from the bot for this server.')
-                
-                except mysql.Error as e:
-                    print(f'An error occurred while trying to remove {user_name}\'s data the {interaction.guild.name} server ({server_id}): {e}')
+                else:
+                    print(f'An error occurred while trying to remove {user_name}\'s data the {interaction.guild.name} server ({server_id}): {results}')
                     await log_channel.send(f'An error has occurred while attempting to remove {user_name}\'s data for this serve. If this repeats, please contact kyraltre.')
                     await interaction.response.send_message(f'An error occurred while trying to delete your data. If this issue repeats, please contact kyraltre. Thank you.', ephemeral = True)
-
             else:
                 await interaction.response.send_message(f'Confirmation not recieved, if you want to remove your data from this bot. Type \'YES\' in the confirmation field', ephemeral = True)
         else:
@@ -904,20 +889,15 @@ async def removeUserDataAdmin(interaction: discord.Interaction, confirmation_to_
                 admin_found = True
                 if confirmation_to_remove_data == "YES":
                     if confirmation_server_id == server_id:
-                        try:
-                            conn = connect_db()
-                            cursor = conn.cursor()
-                            
-                            QUERY_HORSE = (f'DELETE FROM horse_information WHERE user_id = {user_id} AND server_id = {server_id}')
-                            cursor.execute(QUERY_HORSE)
-                            conn.commit()
-                            conn.close()
+                        results = await remove_user_data(user_id, server_id)
+
+                        if results == True:
                             print(f'Successfully deleted {user_name}\'s data from the {server_name} server ({server_id}) -- Request completed by {admin_name} - {interaction.user.id}')
                             await interaction.response.send_message(f'All data for {user_name} related to this server has been removed from the bot.', ephemeral = True)
                             await log_channel.send(f'{admin_name} has removed {user_name}\'s data related to this server from the bot.')
                         
-                        except mysql.Error as e:
-                            print(f'An error occurred while {admin_name} was trying to remove {user_name}\'s data the {server_name} server ({server_id}): {e}')
+                        else:
+                            print(f'An error occurred while {admin_name} was trying to remove {user_name}\'s data the {server_name} server ({server_id}): {results}')
                             await log_channel.send(f'An error has occurred while {user_name} was attempting to remove {user_name}\'s data for this server. If this repeats, please contact kyraltre.')
                             await interaction.response.send_message(f'An error occurred while trying to delete {user_name}\'s data. If this issue repeats, please contact kyraltre. Thank you.', ephemeral = True)
                     else:
@@ -956,26 +936,18 @@ async def removeServerData(interaction: discord.Interaction, confirmation_to_rem
                 if confirmation_to_remove_data == "YES":
                     if confirmation_your_user_id == user_id:
                         if confirmation_server_id == server_id:
-                            try:
-                                conn = connect_db()
-                                cursor = conn.cursor()
-                                
-                                QUERY_HORSE = (f'DELETE FROM horse_information WHERE server_id = {server_id}')
-                                cursor.execute(QUERY_HORSE)
-                                QUERY_SERVER = (f'DELETE FROM server_data WHERE server_id = {server_id}')
-                                cursor.execute(QUERY_SERVER)
-                                conn.commit()
+                            results = await remove_server_data(server_id)
 
-                                conn.close()
-
+                            if results == True:
                                 print(f'Successfully deleted ALL USER DATA from the {server_name} server ({server_id} -- Request completed by {user_name} - {user_id})')
                                 await interaction.response.send_message(f'All data related to this server has been removed from the bot. You are save to remove this bot from your server. Thank you for spending time with us! :heart:', ephemeral = True)
                                 await log_channel.send(f'{user_name} has removed ALL DATA related to this server from the bot. You are save to remove this bot from your server. Thank you for spending time with us! :heart:')
                             
-                            except mysql.Error as e:
-                                print(f'An error occurred while {user_name} was trying to remove ALL USER data the {server_name} server ({server_id}): {e}')
+                            else:
+                                print(f'An error occurred while {user_name} was trying to remove ALL USER data the {server_name} server ({server_id}): {results}')
                                 await log_channel.send(f'An error has occurred while {user_name} was attempting to remove ALL user data for this server. If this repeats, please contact kyraltre.')
                                 await interaction.response.send_message(f'An error occurred while trying to delete ALL user data. If this issue repeats, please contact kyraltre. Thank you.', ephemeral = True)
+
                         else:
                             await log_channel.send(f'{user_name} attempted to remove ALL user data from this server. Request denied due to mismatched Server ID')
                             await interaction.response.send_message(f'Server ID does not match. Request denied.', ephemeral = True)
@@ -991,6 +963,7 @@ async def removeServerData(interaction: discord.Interaction, confirmation_to_rem
             await interaction.response.send_message(f'Request denied. You don\'t have the appropriate role to run this command.', ephemeral = True)
     else:
         await interaction.response.send_message(NO_SERVER_ERROR_MESSAGE, ephemeral = True)
+
 
 ####################################################################################
 ################################# SET CUSTOM IMAGES ################################
@@ -1383,69 +1356,69 @@ VOWELS = ('a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U')
 #######################################################################################
 ################################# REGISTER NEW HORSES #################################
 ##SET UP A HORSE FOR YOURSELF
-@client.tree.command(name="createpony", description="Set up your pony! Gender: 0-Mare 1-Stallion 2-Gelding", guild=GUILD_ID)
-async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gender : int):
+@client.tree.command(name="createpony", description="Set up your pony!", guild=GUILD_ID)
+async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gender : str, optional_ref_img_url : str = ""):
     server_id = interaction.guild.id
     server_data = await get_server_data(server_id)
     
+    pony_sx_int = 3
+    match pony_gender.lower():
+        case "mare":
+            pony_sx_int = 0
+        case "stallion":
+            pony_sx_int = 1
+        case "stall":
+            pony_sx_int = 1
+        case "gelding":
+            pony_sx_int = 2
+        case "geld":
+            pony_sx_int = 2
+
     if server_data:
         log_channel = client.get_channel(server_data[4])
         channel = interaction.guild.get_channel(server_data[5])
         if not(interaction.channel_id == server_data[5]):
             await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
         else:
-            if pony_gender > 2 or pony_gender < 0:
-                await interaction.response.send_message(f'Please try again and properly select a gender for your pony (0-2)', ephemeral = True)
+            if pony_sx_int == 3:
+                await interaction.response.send_message(f'Please try again and properly select a gender for your pony.', ephemeral = True)
             else:
                 coat = random.randrange(1, 7)
                 user_id = interaction.user.id
                 user_name = interaction.user.display_name
-                conn = connect_db() #connect to the database
-                cursor = conn.cursor() #start work on the database. cursor will be the action to move through the database
-                
-                # Check if the user already exists in the database - cursor.execute will run a sql fn in the database
-                cursor.execute(f"SELECT * FROM horse_information WHERE user_id = {user_id} AND server_id = {server_id}")
-                horse = cursor.fetchone() #fetchone() gets the first row of the results
-
-                cursor.execute(f"SELECT * FROM preset_images WHERE coat_id = {coat}")
-                coat_values = cursor.fetchone()
+                horse = await gather_all_horse_data(user_id, server_id)
 
                 if horse: #if something was pulled above...
                     await interaction.response.send_message(f'Sorry {interaction.user.display_name}, you already have a horse!', ephemeral = True)
                     await log_channel.send(f'{interaction.user.display_name} attempted to rergister a second horse with the createapony command')
                 else:
-                    # Insert user data into the database
-                    #await interaction.response.send_message("The SQL server does not have a horse registered to you.")
-                    try:
-                        QUERY = (
-                            f'INSERT INTO horse_information (user_id, server_id, user_name, horse_name, gender, health, hunger, thirst, clean, money, bot_pts, server_pts, harpg_pts, coat, custom_thumb, stand_ref_image, happy_ref_img, sad_ref_img, feed_img, water_img, brush_img, treat_img, serial) '
-                        + f'VALUES ({user_id}, {server_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 7, 7, 7, 7, 30, 10, 0, 0, {coat}, 0, \"\", \"\", \"\", \"\", \"\", \"\", \"\", DEFAULT)' 
-                        )
-                        cursor.execute(QUERY)
-                        conn.commit() #commits the information above to the database to save the addition of information
+                    results = await register_horse(user_id, server_id, user_name, pony_name, pony_sx_int, coat, optional_ref_img_url)
+                    
+                    if results == True:
+                        coat_values = await gather_coat_values(coat)
                         print(f'A new {coat_values[1]} horse named, {pony_name}, has been registered to {user_name}.')
                         await log_channel.send(f'{interaction.user.display_name} has registered a new {coat_values[1]} horse named, {pony_name}.')
                         
-                        message = (f'Congrats! {pony_name} has come home to you! Please take good care of {PRONOUNS_LOW[pony_gender,1]}. :horse:')
+                        message = (f'Congrats! {pony_name} has come home to you! Please take good care of {PRONOUNS_LOW[pony_sx_int,1]}. :horse:')
                     
                         embed = discord.Embed(title="A new horse has arrived!", description=message, color= BOT_COLOR)
-                        embed.set_image(url=coat_values[3])
-                        
+                        if optional_ref_img_url == "":
+                            embed.set_image(url=coat_values[3])
+                        else:
+                            embed.set_image(url=optional_ref_img_url)
                         await interaction.response.send_message(embed=embed)
 
-                    except mysql.connector.Error as e:
-                        print(f'Error occurred while attempting to add a horse for {user_name} in {server_id}: {e}')
+                    else:
+                        print(f'Error occurred while attempting to add a horse for {user_name} in {server_id}: {results}')
                         await log_channel.send(f'{interaction.user.display_name} has encountered an error while attempting to register a horse.')
                         await interaction.response.send_message(f'An error has occured while attempting to add your horse to our stable. Please contact an adminstrator for assistance.', ephemeral = True)
-
-                conn.close() #safely exit the database connection
 
     else:
         await interaction.response.send_message(f'Your server is not set up to accept horses. Please have a server moderator set up the bot. Thank you!', ephemeral = True)
 
 ##SET UP A HORSE - ADMIN FOR ANOTHER USER
-@client.tree.command(name="createponyadmin", description="Admin - Pony Set Up | Unique Discord User ID needed | Gender: 0-M 1-S 2-G", guild=GUILD_ID)
-async def createAPonyADMIN(interaction: discord.Interaction, updating_user: str, pony_name: str, pony_gender : int):
+@client.tree.command(name="createponyadmin", description="Admin - Pony Set Up", guild=GUILD_ID)
+async def createAPonyADMIN(interaction: discord.Interaction, updating_user: str, pony_name: str, pony_gender : str, optional_ref_img_url : str = ""):
     server_id = interaction.guild.id
     server_data = await get_server_data(server_id)
     user_roles = interaction.user.roles
@@ -1454,42 +1427,45 @@ async def createAPonyADMIN(interaction: discord.Interaction, updating_user: str,
     user_name = await client.fetch_user(user_id)
     admin_found = False
 
+    pony_sx_int = 3
+    match pony_gender.lower():
+        case "mare":
+            pony_sx_int = 0
+        case "stallion":
+            pony_sx_int = 1
+        case "stall":
+            pony_sx_int = 1
+        case "gelding":
+            pony_sx_int = 2
+        case "geld":
+            pony_sx_int = 2
+
     if server_data:
         log_channel = client.get_channel(server_data[4])
         for role in user_roles:
             if role.id == server_data[3]:
                 admin_found = True
                 print(f'{interaction.user.display_name} ran the admin create a pony command.')
-                if pony_gender > 2 or pony_gender < 0:
-                    await interaction.response.send_message(f'Please try again and properly select a gender for their pony (0-2)')
+                if pony_sx_int == 3:
+                    await interaction.response.send_message(f'Please try again and properly select a gender for their pony.')
                 else:
                     coat = random.randrange(1, 7)
+                    horse = await gather_all_horse_data(user_id, server_id)
 
-                    conn = connect_db() 
-                    cursor = conn.cursor() 
-                    
-                    cursor.execute(f"SELECT * FROM horse_information WHERE user_id = {user_id} AND server_id = {server_id}")
-                    user = cursor.fetchone() 
-
-                    if user: 
+                    if horse: 
                         await interaction.response.send_message(f'{user_name} already has a horse!', ephemeral= True)
                         await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command - unsucessful - {user_name} already had a horse')
                     else:
-                        try:
-                            QUERY = (
-                                f'INSERT INTO horse_information (user_id, server_id, user_name, horse_name, gender, health, hunger, thirst, clean, money, bot_pts, server_pts, harpg_pts, coat, custom_thumb) '
-                              + f'VALUES ({user_id}, {server_id}, \"{user_name}\", \"{pony_name}\", {pony_gender}, 7, 7, 7, 7, 30, 10, 0, 0, {coat}, 0)' 
-                            )
-                            cursor.execute(QUERY)
-                            conn.commit() 
+                        results = await register_horse(user_id, server_id, user_name, pony_name, pony_sx_int, coat, optional_ref_img_url)
+                        
+                        if results == True:
                             await interaction.response.send_message(f'{pony_name} has been registered to {user_name}', ephemeral= True)
                             await log_channel.send(f'{interaction.user.display_name} ran the admin create a pony command to register a horse to {user_name}')
-                        except mysql.connector.Error as e:
-                            print(f'Error occurred while attempting to add a horse for {user_name}: {e}')
+                        
+                        else:
+                            print(f'Error occurred while attempting to add a horse for {user_name}: {results}')
                             await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command - unsuccessful - an error occurred while trying to register a horse for {user_name}')
                             await interaction.response.send_message(f'An error has occured while attempting to register a horse for {user_name}', ephemeral= True)
-
-                    conn.close() 
         
         if not admin_found:
             await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command')
@@ -1623,14 +1599,13 @@ class FoodDropdown(discord.ui.Select):
         options = [
             discord.SelectOption(label='1 lb of Grain', emoji='🧺'),
             discord.SelectOption(label='2 lbs of Beet Pulp Mash', emoji='🧺'),
-            discord.SelectOption(label='3 lbs of Timothy', emoji='🌿'),
-            discord.SelectOption(label='4 lbs of Clover hay', emoji='☘️'),
-            discord.SelectOption(label='5 lbs of Alfalfa', emoji='🥬'),
-            discord.SelectOption(label='6 lb of Mixed Grass hay', emoji='🌾'),
+            discord.SelectOption(label='3 lb of Orchard hay', emoji='🌿'),
+            discord.SelectOption(label='4 lbs of Timothy', emoji='🌾'),
+            discord.SelectOption(label='5 lbs of Clover hay', emoji='☘️'),
+            discord.SelectOption(label='6 lbs of Alfalfa', emoji='🥬'),
             discord.SelectOption(label='7 lbs of Orchard hay', emoji='🌿'),
             discord.SelectOption(label='8 lbs of Timothy', emoji='🌾'),
             discord.SelectOption(label='9 lbs of Clover hay', emoji='☘️'),
-            discord.SelectOption(label='10 lbs of Alfalfa Mix hay', emoji='🥬'),
         ]
 
         # The placeholder is what will be shown when no option is chosen
@@ -1704,11 +1679,10 @@ class WaterDropdown(discord.ui.Select):
             discord.SelectOption(label='3 gallons of water', emoji='💙'),
             discord.SelectOption(label='4 gallons of water', emoji='🔵'),
             discord.SelectOption(label='5 gallons of water', emoji='🟦'),
-            discord.SelectOption(label='6 gallon of water', emoji='🟦'),
-            discord.SelectOption(label='7 gallons of water', emoji='🔵'),
-            discord.SelectOption(label='8 gallons of water', emoji='💙'),
-            discord.SelectOption(label='9 gallons of water', emoji='🔷'),
-            discord.SelectOption(label='10 gallons of water', emoji='🔹'),
+            discord.SelectOption(label='6 gallons of water', emoji='🔵'),
+            discord.SelectOption(label='7 gallons of water', emoji='💙'),
+            discord.SelectOption(label='8 gallons of water', emoji='🔷'),
+            discord.SelectOption(label='9 gallons of water', emoji='🔹'),
         ]
 
         super().__init__(placeholder='How much water do you add...', min_values=1, max_values=1, options=options)
@@ -1885,11 +1859,12 @@ class TreatsDropdown(discord.ui.Select):
 
         options = [
             discord.SelectOption(label='Apple', emoji='🍎'),
-            discord.SelectOption(label='Bananna', emoji='🍎'),
+            discord.SelectOption(label='Banana', emoji='🍌'),
             discord.SelectOption(label='Peppermint', emoji='🍬'),
             discord.SelectOption(label='Sugarcube', emoji='🧊'),
             discord.SelectOption(label='Carrot', emoji='🥕'),
-            discord.SelectOption(label='Cookie', emoji='🍪'),
+            discord.SelectOption(label='Cookie', emoji='🍪'),            
+            discord.SelectOption(label='Watermelon', emoji='🍉'),
         ]
 
         super().__init__(placeholder='What treat are you feeding you pony...', min_values=1, max_values=1, options=options)
