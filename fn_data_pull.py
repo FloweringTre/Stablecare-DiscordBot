@@ -2,7 +2,6 @@ import numpy as np
 import mysql.connector
 import random
 from typing import Any
-import discord
 
 def connect_db():
     return mysql.connector.connect(
@@ -10,8 +9,8 @@ def connect_db():
              
     )
 
-########################################################################################
-################################# STABLECARE FUNCTIONS #################################
+#####################################################################################
+################################# SERVER DATA PULLS #################################
 ### gathering information for the server
 async def get_server_data(server_id):
     conn = connect_db()
@@ -58,6 +57,137 @@ async def update_server_data(server_id, data_column, updated_value):
         print(f"The bad query: {QUERY_STR}")
         return False #pass as a failed operation
 
+### Remove all server related data
+async def remove_server_data(server_id):
+    try:
+        conn = connect_db()
+        cursor = conn.cursor()
+        
+        QUERY_HORSE = (f'DELETE FROM horse_information WHERE server_id = {server_id}')
+        cursor.execute(QUERY_HORSE)
+        QUERY_SERVER = (f'DELETE FROM server_data WHERE server_id = {server_id}')
+        cursor.execute(QUERY_SERVER)
+        QUERY_USER = (f'DELETE FROM user_data WHERE server_id = {server_id}')
+        cursor.execute(QUERY_USER)
+        conn.commit()
+
+        conn.close()
+        return True
+        
+    except mysql.Error as e:
+        return e
+
+
+####################################################################################
+################################# USER DATA PULLS #################################
+### Register a user
+async def register_user(user_id, server_id, user_name):
+    try:
+        conn = connect_db()
+        cursor = conn.cursor()
+
+        QUERY = (
+            f'INSERT INTO user_data (user_id, server_id, user_name, serial, active_horse) '
+          + f'VALUES ({user_id}, {server_id}, \"{user_name}\", DEFAULT, 0 )' 
+        )
+        cursor.execute(QUERY)
+        conn.commit() #commits the information above to the database to save the addition of information
+
+        conn.close()
+        return True
+
+    except mysql.Error as e:
+        return e
+
+### Remove all related user data
+async def remove_user_data(user_id, server_id):
+    try:
+        conn = connect_db()
+        cursor = conn.cursor()
+        
+        QUERY_HORSE = (f'DELETE FROM horse_information WHERE user_id = {user_id} AND server_id = {server_id}')
+        cursor.execute(QUERY_HORSE)
+        QUERY_USER = (f'DELETE FROM user_data WHERE user_id = {user_id} AND server_id = {server_id}')
+        cursor.execute(QUERY_USER)
+        conn.commit()
+
+        conn.close()
+        return True
+
+    except mysql.Error as e:
+        return e
+
+### Update User information
+async def update_user_data(user_id, server_id, data_column, updated_value):
+    try:
+        conn = connect_db()
+        cursor = conn.cursor()
+
+        #pass whever column you want in and the value you wante changed in the horse information table
+        QUERY_STR = (f"UPDATE user_data SET {data_column} = %s WHERE user_id = %s AND server_id = %s")
+        
+        cursor.execute(QUERY_STR, (updated_value, user_id, server_id))
+        conn.commit()
+
+        conn.close()
+        return True #pass a successful operation
+
+    except mysql.connector.Error as e: #report errors that occur
+        print(f"An error has happened while attempting to update user data: {e}")
+        print(f"The bad query: {QUERY_STR}")
+        return False #pass as a failed operation
+
+### gathering information for the user
+async def gather_user_data(user_id, server_id):
+    conn = connect_db()
+    cursor = conn.cursor()
+
+    SELECTION_STR = (f'SELECT * FROM user_data WHERE user_id = {user_id} AND server_id = {server_id}')
+    cursor.execute(SELECTION_STR)
+    user_data = cursor.fetchone()
+    
+    conn.close()
+    
+    return user_data
+
+### how many users do we have????
+async def count_users(server_id):
+    conn = connect_db()
+    cursor = conn.cursor()
+
+    #fetch a count of the servers
+    cursor.execute("SELECT COUNT(*) FROM user_data")
+    user_count = cursor.fetchone()
+    
+    conn.close()
+    
+    return user_count
+
+####################################################################################
+################################# HORSE DATA PULLS #################################
+### register a new horse
+async def register_horse(user_id, server_id, user_name, pony_name, pony_sx_int, coat, ref_img : str = ""):
+    try:
+        conn = connect_db()
+        cursor = conn.cursor()
+        
+        cust_thumb = 0
+        if not(ref_img == ""):
+            cust_thumb = 1
+
+        QUERY = (
+            f'INSERT INTO horse_information (user_id, server_id, user_name, horse_name, gender, health, hunger, thirst, clean, bot_pts, harpg_pts, coat, custom_thumb, stand_ref_image, serial, active_horse) '
+          + f'VALUES ({user_id}, {server_id}, \"{user_name}\", \"{pony_name}\", {pony_sx_int}, 9, 7, 7, 7, 10, 0, {coat}, {cust_thumb}, \"{ref_img}\", DEFAULT, 1)' 
+        )
+        cursor.execute(QUERY)
+        conn.commit() #commits the information above to the database to save the addition of information
+
+        conn.close()
+        return True
+
+    except mysql.Error as e:
+        return e
+
 ### gathering information for the horse
 async def gather_all_horse_data(user_id, server_id):
     conn = connect_db()
@@ -71,6 +201,19 @@ async def gather_all_horse_data(user_id, server_id):
     conn.close()
     
     return horse_data
+
+### how many horses do we have????
+async def count_horses(server_id):
+    conn = connect_db()
+    cursor = conn.cursor()
+
+    #fetch a count of the servers
+    cursor.execute("SELECT COUNT(*) FROM horse_information")
+    horse_count = cursor.fetchone()
+    
+    conn.close()
+    
+    return horse_count
 
 ### gather coat data
 async def gather_coat_values(coat_id):
@@ -93,50 +236,6 @@ async def gather_coat_values(coat_id):
     
     return coat_values
 
-### get top 5 values
-async def get_leaderboard(server_id, point_type):
-    conn = connect_db()
-    cursor = conn.cursor()
-
-    #fetch the top 5 of a specific leaderboard type sorted largest to smallest
-    SELECTION_STR = (f'SELECT user_name, horse_name, {point_type}_pts FROM horse_information WHERE server_id = {server_id} AND {point_type}_pts > 0 ORDER BY {point_type}_pts DESC')
-    cursor.execute(SELECTION_STR)
-    leaderboard = cursor.fetchmany(5)
-    
-    conn.close()
-    
-    return leaderboard
-
-### get random question for training/showing
-async def get_question(stat_value):
-    conn = connect_db()
-    cursor = conn.cursor()
-
-    level = 0
-    if stat_value >= 0 or stat_value < 11:
-        level = 1
-    elif stat_value >= 10 or stat_value < 21:
-        level = 2
-    elif stat_value >= 20 or stat_value < 31:
-        level = 3
-    elif stat_value >= 30:
-        level = 3
-    
-    if level == 0: #check for a bad value
-        return False
-
-    question_table = f'math_lvl_{level}' #find the level of the table
-
-    #select a random question from the specified level table
-    SELECTION_STR = (f'SELECT * FROM {question_table} ORDER BY RAND() LIMIT 1')
-
-    cursor.execute(SELECTION_STR)
-    question = cursor.fetchone()
-    
-    conn.close()
-    
-    return question
-
 ### update table information for a horse
 async def update_horse_data(user_id, server_id, data_column, updated_value):
     try:
@@ -153,11 +252,11 @@ async def update_horse_data(user_id, server_id, data_column, updated_value):
         return True #pass a successful operation
 
     except mysql.connector.Error as e: #report errors that occur
-        print(f"An error has happened while attempting to update data: {e}")
+        print(f"An error has happened while attempting to update horse data: {e}")
         print(f"The bad query: {QUERY_STR}")
         return False #pass as a failed operation
 
-### update all table values to reduce horse feed and water stats
+## update all table values to reduce horse feed and water stats
 async def daily_horse_update():
     try:
         conn = connect_db()
@@ -193,20 +292,34 @@ async def daily_horse_update():
         cursor.execute("UPDATE horse_information SET daily_trainings = 0")
         conn.commit()
 
-        cursor.execute("SELECT COUNT(*) FROM server_data")
-        servers = cursor.fetchone()
-        cursor.execute("SELECT COUNT(*) FROM horse_information")
-        horses = cursor.fetchone()
-
-        message = servers + horses
-
         conn.close()
+        
+        servers = await count_servers()
+        horses = await count_horses()
+        message = servers + horses
         return message #return the number of servers and horses updated
 
     except mysql.connector.Error as e: #report error
         print(f'An error has happened while attempting to update all horses values: {e}')
         message = ""
         return message #return the error message
+
+
+################################################################################
+################################# POINTS PULLS #################################
+### get top 5 values
+async def get_leaderboard(server_id, point_type):
+    conn = connect_db()
+    cursor = conn.cursor()
+
+    #fetch the top 5 of a specific leaderboard type sorted largest to smallest
+    SELECTION_STR = (f'SELECT user_name, horse_name, {point_type}_pts FROM horse_information WHERE server_id = {server_id} AND {point_type}_pts > 0 ORDER BY {point_type}_pts DESC')
+    cursor.execute(SELECTION_STR)
+    leaderboard = cursor.fetchmany(5)
+    
+    conn.close()
+    
+    return leaderboard
 
 ### Update the money of a listed player
 async def update_user_money(user_id, server_id, change_value):
@@ -249,6 +362,9 @@ async def update_user_points(user_id, server_id, point_type, change_value):
         print(f"The bad query: {QUERY_STR}")
         return False #pass as a failed operation
 
+
+#################################################################################
+################################# CUSTOM IMAGES #################################
 ### Set custom images to use
 async def set_custom_image(user_id, server_id, image_type, image_url):
     horse_data = await gather_all_horse_data(user_id, server_id)
@@ -393,6 +509,39 @@ async def remove_custom_image(user_id, server_id, image_type):
             print(f"The bad remove image query: {QUERY_STR}")
             print(f"The bad reset custom image bool query: {QUERY_CUST}")
             return False # pass a failed operation
+
+
+########################################################################################
+################################# TRAINING AND SHOWING #################################
+### get random question for training/showing
+async def get_question(stat_value):
+    conn = connect_db()
+    cursor = conn.cursor()
+
+    level = 0
+    if stat_value >= 0 or stat_value < 11:
+        level = 1
+    elif stat_value >= 10 or stat_value < 21:
+        level = 2
+    elif stat_value >= 20 or stat_value < 31:
+        level = 3
+    elif stat_value >= 30:
+        level = 3
+    
+    if level == 0: #check for a bad value
+        return False
+
+    question_table = f'math_lvl_{level}' #find the level of the table
+
+    #select a random question from the specified level table
+    SELECTION_STR = (f'SELECT * FROM {question_table} ORDER BY RAND() LIMIT 1')
+
+    cursor.execute(SELECTION_STR)
+    question = cursor.fetchone()
+    
+    conn.close()
+    
+    return question
 
 ### Update the discipline_level of a user
 async def discipline_level(user_id, server_id, horse_data, discipline):
