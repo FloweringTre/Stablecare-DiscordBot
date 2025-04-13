@@ -7,6 +7,7 @@ import discord
 from discord.ext import commands
 from discord.ext import tasks
 from discord import app_commands
+from datetime import date
 
 from fn_data_pull import *
 from fn_stats import *
@@ -18,7 +19,6 @@ NO_HORSE_ERROR_MESSAGE = f'Sorry, we don\'t have a horse registered to you in ou
 NO_SERVER_ERROR_MESSAGE = f'Sorry, your server isn\'t set up with this bot. Please have the server owner run the \'/setup\' command.'
 BOT_CREDITS = f'This bot was made in collaboration between kyraltre and MoonFlower. We thank you for using our bot!'
 
- 
 
 #############################################################################
 ################################# FUNCTIONS #################################
@@ -370,7 +370,7 @@ class Client(commands.Bot):
                     for L in results:
                         user_name = await client.fetch_user(L[0])
                         message += f'{placement}. {user_name.mention} and {L[1]} - {L[2]} pts\n'
-                        await update_user_money(L[0], server_id, show_money[placement])
+                        await update_user_points(L[0], server_id, "money", show_money[placement])
                         await update_user_points(L[0], server_id, "server", show_pts[placement])
                         placement += 1
                     embed.add_field(name=show_title, value=message)
@@ -659,8 +659,7 @@ async def informationShowing(interaction: discord.Interaction):
     title = f':trophy: About Horse Showing :trophy:'
     about_message = (
         f'We have 4 different disciplines to show your horse in, **Dressage, Show Jumping, Barrel Racing, and Western Pleasure**.' +
-        f'\nEnter your pony in the daily show with the \'/entershow\' command.' +
-        f'\n**Entering a show will consume one training session.** If you have already used all three training sessions, you have to wait for the barn update to register for the show.'
+        f'\nEnter your pony in the daily show with the \'/entershow\' command.' 
     )
 
     embed = discord.Embed(title= title, description=about_message, color= BOT_COLOR)
@@ -688,6 +687,19 @@ async def informationShowing(interaction: discord.Interaction):
     if not(interaction.channel_id == server_data[5]):
         await interaction.response.send_message(f'I sent the response to your request in the StableCare bot channel :horse::heart: - {channel.mention}', ephemeral= True)
     await channel.send(embed=embed)
+
+### link to the wiki for helps
+@client.tree.command(name="helpall", description="Link to the wiki for all the help guides!", guild=GUILD_ID)
+async def informationWiki(interaction: discord.Interaction):
+    message = f'### *Need help?* \n[Check out the wiki hosted on our GitHub page!](https://github.com/FloweringTre/Stablecare-DiscordBot/wiki)'
+    
+    server_data = await get_server_data(interaction.guild.id)
+    channel = interaction.guild.get_channel(server_data[5])
+    if not(interaction.channel_id == server_data[5]):
+        await interaction.response.send_message(f'I sent the response to your request in the StableCare bot channel :horse::heart: - {channel.mention}', ephemeral= True)
+        await channel.send(message)
+    else:
+        await interaction.response.send_message(message)
 
 ###########################################################################################################
 ################################# BUILD THE BOT - BOT SET UP AND UPDATING #################################
@@ -1230,7 +1242,7 @@ async def serverPoints(interaction: discord.Interaction, updating_user: str, poi
     admin_name = interaction.user.display_name
     user_roles = interaction.user.roles
 
-    horse_data = await gather_all_horse_data(user_id, server_id)
+    user_data = await gather_user_data(user_id, server_id)
     server_data = await get_server_data(server_id)
     log_channel = client.get_channel(server_data[4])
     admin_found = False
@@ -1241,15 +1253,15 @@ async def serverPoints(interaction: discord.Interaction, updating_user: str, poi
         for role in user_roles:
             if role.id == server_data[3]:
                 admin_found = True
-                if horse_data:
+                if user_data:
                     result = await update_user_points(user_id, server_id, "server", points_to_add)
                     if result:
-                        horse_data = await gather_all_horse_data(user_id, server_id)
-                        message = f'{horse_data[2]}, {user_name}\'s horse, server point total is now {horse_data[11]}'
+                        user_data = await gather_user_data(user_id, server_id)
+                        message = f'{user_name}\'s server point total is now {user_data[7]}'
                         log_message = f'{admin_name}, added {points_to_add} server points to {user_name}\'s horse.'
 
                     else:
-                        message = f'An error occurred while trying to update {user_name}\'s server points for {horse_data[2]}. If this error repeats, please contact kyraltre.'
+                        message = f'An error occurred while trying to update {user_name}\'s server points. If this error repeats, please contact kyraltre.'
                         log_message = f'{admin_name} ATTEMPTED to add {points_to_add} server points to {user_name}\'s horse but an error occurred.'
                     
                     await log_channel.send(log_message)
@@ -1257,6 +1269,9 @@ async def serverPoints(interaction: discord.Interaction, updating_user: str, poi
 
                 else:
                     await interaction.response.send_message(f'There is no horse registered to {user_name} in this server.', ephemeral = True)
+        if not admin_found:
+            await log_channel.send(f'{interaction.user.display_name} attempted to use the admin add server points command')
+            await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, only Stablecare Barn Managers can run this command.', ephemeral=True)
     else:
         await interaction.response.send_message(NO_SERVER_ERROR_MESSAGE, ephemeral = True)
 
@@ -1269,7 +1284,7 @@ async def serverMoney(interaction: discord.Interaction, updating_user: str, mone
     admin_name = interaction.user.display_name
     user_roles = interaction.user.roles
 
-    horse_data = await gather_all_horse_data(user_id, server_id)
+    user_data = await gather_user_data(user_id, server_id)
     server_data = await get_server_data(server_id)
     log_channel = client.get_channel(server_data[4])
     admin_found = False
@@ -1280,8 +1295,8 @@ async def serverMoney(interaction: discord.Interaction, updating_user: str, mone
         for role in user_roles:
             if role.id == server_data[3]:
                 admin_found = True
-                if horse_data:
-                    result = await update_user_money(user_id, server_id, money_to_add)
+                if user_data:
+                    result = await update_user_data(user_id, server_id, "money", money_to_add)
                     if result:
                         horse_data = await gather_all_horse_data(user_id, server_id)
                         message = f'{user_name}\'s account now has ${horse_data[9]}'
@@ -1296,30 +1311,64 @@ async def serverMoney(interaction: discord.Interaction, updating_user: str, mone
 
                 else:
                     await interaction.response.send_message(f'There is no horse registered to {user_name} in this server.', ephemeral = True)
+        if not admin_found:
+            await log_channel.send(f'{interaction.user.display_name} attempted to use the admin add money command')
+            await interaction.response.send_message(f'Sorry, {interaction.user.display_name}, only Stablecare Barn Managers can run this command.', ephemeral=True)
+
     else:
         await interaction.response.send_message(NO_SERVER_ERROR_MESSAGE, ephemeral = True)
 
 ### check out the leaderboard for bot or server points
-@client.tree.command(name="leaderboard", description="See the top 5 users and horses for either Care points (0) or Server points (1)", guild=GUILD_ID)
-async def leaderboard(interaction: discord.Interaction, leaderboard_type: int):
+@client.tree.command(name="leaderboard", description="See the top 5 users and horses for Care(Bot) Points, Server Points, or Show Points.", guild=GUILD_ID)
+async def leaderboard(interaction: discord.Interaction, leaderboard_type: str):
     server_id = interaction.guild.id
     board = ""
     nice_type = ""
     title = ""
     message = ""
-    match leaderboard_type:
-        case 0:
-            board = "bot"
+    match leaderboard_type.lower():
+        case "bot":
+            board = "monthly_bot"
             nice_type = "Care Points"
             title = f':trophy: {interaction.guild.name}\'s Care Points Leaderboard :trophy:'
             message = f'These points are earned through caring for your pony!\n\n'
-        case 1:
+        case "care":
+            board = "monthly_bot"
+            nice_type = "Care Points"
+            title = f':trophy: {interaction.guild.name}\'s Care Points Leaderboard :trophy:'
+            message = f'These points are earned through caring for your pony!\n\n'
+        case "server":
             board = "server"
             nice_type = "Server Points"
             title = f':trophy: {interaction.guild.name}\'s Server Points Leaderboard :trophy:'
             message = f'These points are given out by your server\'s moderation team!\n\n'
+        case "champ":
+            board = "champion"
+            nice_type = "Competition Points"
+            title = f':trophy: {interaction.guild.name}\'s Compeition Points Leaderboard :trophy:'
+            message = f'These points are given out by placing in the daily shows!\n\n'
+        case "champion":
+            board = "champion"
+            nice_type = "Competition Points"
+            title = f':trophy: {interaction.guild.name}\'s Compeition Points Leaderboard :trophy:'
+            message = f'These points are given out by placing in the daily shows!\n\n'
+        case "compete":
+            board = "champion"
+            nice_type = "Competition Points"
+            title = f':trophy: {interaction.guild.name}\'s Compeition Points Leaderboard :trophy:'
+            message = f'These points are given out by placing in the daily shows!\n\n'
+        case "competition":
+            board = "champion"
+            nice_type = "Competition Points"
+            title = f':trophy: {interaction.guild.name}\'s Compeition Points Leaderboard :trophy:'
+            message = f'These points are given out by placing in the daily shows!\n\n'
+        case "show":
+            board = "champion"
+            nice_type = "Competition Points"
+            title = f':trophy: {interaction.guild.name}\'s Compeition Points Leaderboard :trophy:'
+            message = f'These points are given out by placing in the daily shows!\n\n'
         case _:
-            await interaction.response.send_message(f'Please select a leaderboard type - 0 for Care Points, 1 for Server Points', ephemeral = True)
+            await interaction.response.send_message(f'Please select a leaderboard - Care, Server, or Compeition', ephemeral = True)
     server_data = await get_server_data(server_id)
     channel = interaction.guild.get_channel(server_data[5])
     if not(interaction.channel_id == server_data[5]):
@@ -1359,6 +1408,8 @@ VOWELS = ('a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U')
 @client.tree.command(name="createpony", description="Set up your pony!", guild=GUILD_ID)
 async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gender : str, optional_ref_img_url : str = ""):
     server_id = interaction.guild.id
+    user_id = interaction.user.id
+    user_name = interaction.user.display_name
     server_data = await get_server_data(server_id)
     
     pony_sx_int = 3
@@ -1380,22 +1431,20 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
         if not(interaction.channel_id == server_data[5]):
             await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
         else:
-            if pony_sx_int == 3:
-                await interaction.response.send_message(f'Please try again and properly select a gender for your pony.', ephemeral = True)
+            coat = random.randrange(1, 7)
+            check_for_horse = await gather_all_horse_data(user_id, server_id)
+            if check_for_horse: #if something was pulled above...
+                    await interaction.response.send_message(f'Sorry {interaction.user.display_name}, you already have made a starter horse!', ephemeral = True)
+                    await log_channel.send(f'{interaction.user.display_name} attempted to rergister a second starter horse with the createapony command')
             else:
-                coat = random.randrange(1, 7)
-                user_id = interaction.user.id
-                user_name = interaction.user.display_name
-                horse = await gather_all_horse_data(user_id, server_id)
-
-                if horse: #if something was pulled above...
-                    await interaction.response.send_message(f'Sorry {interaction.user.display_name}, you already have a horse!', ephemeral = True)
-                    await log_channel.send(f'{interaction.user.display_name} attempted to rergister a second horse with the createapony command')
+                if pony_sx_int == 3:
+                    await interaction.response.send_message(f'Please try again and properly select a gender for your pony.', ephemeral = True)
                 else:
                     results = await register_horse(user_id, server_id, user_name, pony_name, pony_sx_int, coat, optional_ref_img_url)
                     
                     if results == True:
                         coat_values = await gather_coat_values(coat)
+
                         print(f'A new {coat_values[1]} horse named, {pony_name}, has been registered to {user_name}.')
                         await log_channel.send(f'{interaction.user.display_name} has registered a new {coat_values[1]} horse named, {pony_name}.')
                         
@@ -1407,6 +1456,10 @@ async def createAPony(interaction: discord.Interaction, pony_name: str, pony_gen
                         else:
                             embed.set_image(url=optional_ref_img_url)
                         await interaction.response.send_message(embed=embed)
+
+                    elif results == "maxxed":
+                        await log_channel.send(f'{interaction.user.display_name} tried to get a new horse but they already have the maximum number of horses.')
+                        await interaction.response.send_message(f'Sorry, you already have the maximum number of horses in your care!' , ephemeral = True)
 
                     else:
                         print(f'Error occurred while attempting to add a horse for {user_name} in {server_id}: {results}')
@@ -1448,24 +1501,22 @@ async def createAPonyADMIN(interaction: discord.Interaction, updating_user: str,
                 print(f'{interaction.user.display_name} ran the admin create a pony command.')
                 if pony_sx_int == 3:
                     await interaction.response.send_message(f'Please try again and properly select a gender for their pony.')
-                else:
+                else:                    
                     coat = random.randrange(1, 7)
-                    horse = await gather_all_horse_data(user_id, server_id)
+                    results = await register_horse(user_id, server_id, user_name, pony_name, pony_sx_int, coat, optional_ref_img_url)
+                        
+                    if results == True:
+                        await interaction.response.send_message(f'{pony_name} has been registered to {user_name}', ephemeral= True)
+                        await log_channel.send(f'{interaction.user.display_name} ran the admin create a pony command to register a horse to {user_name}')
+                    
+                    elif results == "maxxed":
+                        await log_channel.send(f'{interaction.user.display_name} attempted to give {user_name} a new horse, but {user_name} already have the maximum number of horses.')
+                        await interaction.response.send_message(f'Sorry, {user_name} already has the maximum number of horses in their care!' , ephemeral = True)
 
-                    if horse: 
-                        await interaction.response.send_message(f'{user_name} already has a horse!', ephemeral= True)
-                        await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command - unsucessful - {user_name} already had a horse')
                     else:
-                        results = await register_horse(user_id, server_id, user_name, pony_name, pony_sx_int, coat, optional_ref_img_url)
-                        
-                        if results == True:
-                            await interaction.response.send_message(f'{pony_name} has been registered to {user_name}', ephemeral= True)
-                            await log_channel.send(f'{interaction.user.display_name} ran the admin create a pony command to register a horse to {user_name}')
-                        
-                        else:
-                            print(f'Error occurred while attempting to add a horse for {user_name}: {results}')
-                            await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command - unsuccessful - an error occurred while trying to register a horse for {user_name}')
-                            await interaction.response.send_message(f'An error has occured while attempting to register a horse for {user_name}', ephemeral= True)
+                        print(f'Error occurred while attempting to add a horse for {user_name}: {results}')
+                        await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command - unsuccessful - an error occurred while trying to register a horse for {user_name}')
+                        await interaction.response.send_message(f'An error has occured while attempting to register a horse for {user_name}', ephemeral= True)
         
         if not admin_found:
             await log_channel.send(f'{interaction.user.display_name} attempted to use the admin create a pony command')
@@ -1559,6 +1610,70 @@ async def checkPony(interaction: discord.Interaction):
             embed.add_field(name=stats_t, value=stats_v, inline= False)
             
             await interaction.response.send_message(embed=embed)         
+
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+
+@client.tree.command(name="ponylist", description="List all your horses", guild=GUILD_ID)
+async def ponyList(interaction: discord.Interaction):
+    server_id = interaction.guild.id
+    user_id = interaction.user.id
+    horse_data = await gather_all_horse_data(user_id, server_id)
+
+    if horse_data:
+        server_data = await get_server_data(server_id)
+        channel = interaction.guild.get_channel(server_data[5])
+        if not(interaction.channel_id == server_data[5]):
+            await interaction.response.send_message(f'This needs to be sent in my specific channel please - {channel.mention} :horse::heart:', ephemeral= True)
+        
+        else:
+            horse_list = await list_user_horses(user_id, server_id)
+            
+
+            title = f'{interaction.user.display_name}\'s Horses'
+            message = f'Here are all the horses in your barn! Take note of their ID numbers in case you want to swap out who is the active horse you are caring for.\n\n'
+            for H in horse_list:
+                active = "-★-"
+
+                if H[3] == 0:
+                    active = "-★-"
+                else:
+                    active = "-★- Active Horse -★-"
+        
+                message += f'**{H[1]}** - {PRONOUNS_CAP[H[2], 3]} {active} Horse ID#: {H[0]} \n' 
+            
+
+            embed = discord.Embed(title=title, description=message, color=BOT_COLOR)
+
+            await interaction.response.send_message(embed=embed)
+
+    else:
+        await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+
+@client.tree.command(name="ponyswap", description="Swap between your horses!", guild=GUILD_ID)
+async def ponySwap(interaction: discord.Interaction, new_horse_id: int):
+    server_id = interaction.guild.id
+    user_id = interaction.user.id
+    horse_data = await gather_all_horse_data(user_id, server_id)
+    server_data = await get_server_data(server_id)
+
+    if horse_data:
+        new_horse_data = await get_specific_horse_data(new_horse_id)
+        
+        # Verify the horse belongs to the requesting user and the server the user is in
+        if new_horse_data[0] != user_id:
+            await interaction.response.send_message(f'Sorry, you don\'t own {new_horse_data[3]}.', ephemeral= True)
+        elif new_horse_data[1] != server_id:
+            await interaction.response.send_message(f'Sorry, {new_horse_data[3]} doesn\'t live in {server_data[1]}\'s barn community.', ephemeral= True)
+        
+        else:
+            results = await horse_swap(user_id, server_id, new_horse_id, new_horse_data[3])
+
+            if results:
+                await interaction.response.send_message(f'{horse_data[3]} has been moved to the pasture to relax! {new_horse_data[3]} has been brought into the show barn for you!', ephemeral= True)                    
+            else:
+                await interaction.response.send_message(f'We are sorry, something went wrong. If this repeats, please reach out to kyraltre.', ephemeral= True)                
+
 
     else:
         await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
@@ -1853,7 +1968,7 @@ async def groom(interaction: discord.Interaction):
     else:
         await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
 
-################################# Grooming #################################
+################################# Treats #################################
 class TreatsDropdown(discord.ui.Select):
     def __init__(self):
 
@@ -2009,7 +2124,7 @@ async def trainPony(interaction: discord.Interaction, skill_to_train: str):
 
                     msg = await client.wait_for('message', check=check)
                     
-                    if msg.content == str(question[2]):
+                    if msg.content == str(question[3]):
                         new_skl_lvl = skill_level + 1
                         if new_skl_lvl > 30:
                             new_skl_lvl = 30
@@ -2236,7 +2351,7 @@ async def enterShow(interaction: discord.Interaction):
 
                     msg = await client.wait_for('message', check=check)
                     
-                    if msg.content == str(question[2]):
+                    if msg.content == str(question[3]):
                         correct = True
                         title = f'{horse_data[3]} is excellently warmed up!'
                         content = f'You and {horse_data[3]} have a great warm up ride, giving {horse_data[3]} a temporary boost to {PRONOUNS_LOW[horse_data[4],2]} {clase_name} skills!'
@@ -2276,6 +2391,7 @@ async def enterShow(interaction: discord.Interaction):
 
     else:
         await interaction.response.send_message(NO_HORSE_ERROR_MESSAGE, ephemeral=True)
+
 
 ################################# BOT RUN COMMANDS #################################
 client.run('')
