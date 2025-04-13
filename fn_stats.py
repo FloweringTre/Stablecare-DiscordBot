@@ -79,15 +79,15 @@ async def fetch_image(horse_data, image_type):
         case 3:
             ## "feed_img"
             cust_array_value = 18
-            pre_array_value = 5
+            pre_array_value = 6
         case 4:
             ## "water_img"
             cust_array_value = 19
-            pre_array_value = 6
+            pre_array_value = 7
         case 5:
             ## "brush_img"
             cust_array_value = 20
-            pre_array_value = 7
+            pre_array_value = 5
         case 6:
             ## "treat_img"
             cust_array_value = 21
@@ -118,5 +118,3 @@ async def fetch_image(horse_data, image_type):
         image_url = coat_values[pre_array_value]
     
     return image_url
-
-
