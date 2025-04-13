@@ -6,7 +6,7 @@ from typing import Any
 def connect_db():
     return mysql.connector.connect(
         #Database Values
-           
+        
     )
 
 #####################################################################################
@@ -354,14 +354,14 @@ async def daily_horse_update():
         
         ##perfect health bonuses
         for U in perf_users:
-            QUERY_PERF_1 = f'UPDATE user_data SET money = money + FLOOR(6 + RAND() * 10) WHERE user_id = {U[0]} AND server_id = {U[1]}'
+            QUERY_PERF_1 = f'UPDATE user_data SET money_pts = money_pts + FLOOR(6 + RAND() * 10) WHERE user_id = {U[0]} AND server_id = {U[1]}'
             cursor.execute(QUERY_PERF_1)
             QUERY_PERF_2 = f'UPDATE user_data SET monthly_bot_pts = monthly_bot_pts + FLOOR(6 + RAND() * 12) WHERE user_id = {U[0]} AND server_id = {U[1]}'
             cursor.execute(QUERY_PERF_2)
 
         #mediocore health bonuses
         for U in mid_users:
-            QUERY_MID_1 = f'UPDATE user_data SET money = money + FLOOR(2 + RAND() * 5) WHERE user_id = {U[0]} AND server_id = {U[1]}'
+            QUERY_MID_1 = f'UPDATE user_data SET money_pts = money_pts + FLOOR(2 + RAND() * 5) WHERE user_id = {U[0]} AND server_id = {U[1]}'
             cursor.execute(QUERY_MID_1)
             QUERY_MID_2 = f'UPDATE user_data SET monthly_bot_pts = monthly_bot_pts + FLOOR(2 + RAND() * 5) WHERE user_id = {U[0]} AND server_id = {U[1]}'
             cursor.execute(QUERY_MID_2)

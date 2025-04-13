@@ -332,6 +332,7 @@ class Client(commands.Bot):
                 server_id = guild.id
                 server_data = await get_server_data(server_id)
                 channel = guild.get_channel(server_data[5]) #interaction channel
+                print(f'started show run for {server_data[1]}') 
 
                 #built the start of the embed
                 title = ":trophy: Daily Horse Show Results! :trophy:"
@@ -339,7 +340,7 @@ class Client(commands.Bot):
                 embed = discord.Embed(title=title, description=content, color= BOT_COLOR)
 
                 cur_show = server_data[7] #fetch the current show type
-                results = await run_show(server_id, cur_show) #fetch the show results
+                results = await run_show(server_id) #fetch the show results
 
                 show = ""
                 show_title = ""
@@ -360,10 +361,10 @@ class Client(commands.Bot):
                 #array values for points and money for winning
                 show_pts = [0, 24, 21, 18, 15, 12, 9, 6, 3]
                 show_money = [0, 15, 12, 9, 6, 3, 2, 1, 1]
-
+                
                 shows_ran = 0 #checker to see if any show is run
                 if results: #loop through the results to create the message with placements
-                    shows_run += 1
+                    shows_ran += 1
                     placement = 1
                     message = ""
 
@@ -371,7 +372,7 @@ class Client(commands.Bot):
                         user_name = await client.fetch_user(L[0])
                         message += f'{placement}. {user_name.mention} and {L[1]} - {L[2]} pts\n'
                         await update_user_points(L[0], server_id, "money", show_money[placement])
-                        await update_user_points(L[0], server_id, "server", show_pts[placement])
+                        await update_user_points(L[0], server_id, "champion", show_pts[placement])
                         placement += 1
                     embed.add_field(name=show_title, value=message)
                 
@@ -418,7 +419,7 @@ class Client(commands.Bot):
                             await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions(roles=True))
                         else: #no show was run message
                             await channel.send(message)
-                    
+                        
                 await clear_show_scores(server_id) #wipe the show data to reset the scores
                 print(f'completed show run for {server_data[1]}') 
 
