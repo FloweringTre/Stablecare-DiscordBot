@@ -461,6 +461,28 @@ async def update_user_points(user_id, server_id, point_type, change_value):
         return False #pass as a failed operation
 
 
+### Update the point value of a listed horse
+async def update_horse_points(user_id, server_id, point_type, change_value):
+    try:
+        conn = connect_db()
+        cursor = conn.cursor()
+
+        #point types are "champion", "harpg", "monthly_bot", and "lifetime_bot"
+
+        QUERY_STR = (f"UPDATE horse_information SET {point_type}_pts = {point_type}_pts + %s WHERE user_id = %s AND server_id = %s AND is_active = 1")
+        
+        cursor.execute(QUERY_STR, (change_value, user_id, server_id))
+        conn.commit()
+
+        conn.close()
+        return True #pass a successful operation
+
+    except mysql.connector.Error as e: #report errors
+        print(f"An error has happened while attempting to update {user_id}'s active horse's points value in {server_id}: {e}")
+        print(f"The bad query: {QUERY_STR}")
+        return False #pass as a failed operation
+
+
 #################################################################################
 ################################# CUSTOM IMAGES #################################
 ### Set custom images to use

@@ -63,9 +63,9 @@ class Client(commands.Bot):
         await update_horse_data(user_id, server_id, "hunger", food_total)                
         if horse_data[6] < 10:
             if overfed:
-                await update_user_points(user_id, server_id, "bot", 1)
+                await update_user_points(user_id, server_id, "monthly_bot", 1)
             else:
-                await update_user_points(user_id, server_id, "bot", food_amount)
+                await update_user_points(user_id, server_id, "monthly_bot", food_amount)
 
         message = ""
         if food_total == 10 and overfed == False:
@@ -111,9 +111,9 @@ class Client(commands.Bot):
         await update_horse_data(user_id, server_id, "thirst", water_total)                
         if horse_data[7] < 10:
             if overwatered:
-                await update_user_points(user_id, server_id, "bot", 1)
+                await update_user_points(user_id, server_id, "monthly_bot", 1)
             else:
-                await update_user_points(user_id, server_id, "bot", water_amount)
+                await update_user_points(user_id, server_id, "monthly_bot", water_amount)
 
         message = ""
         if water_total == 10 and overwatered == False:
@@ -156,9 +156,9 @@ class Client(commands.Bot):
         await update_horse_data(user_id, server_id, "health", health_total)                
         if horse_data[5] < 10:
             if overhealth:
-                await update_user_points(user_id, server_id, "bot", 1)
+                await update_user_points(user_id, server_id, "monthly_bot", 1)
             else:
-                await update_user_points(user_id, server_id, "bot", health_amount)
+                await update_user_points(user_id, server_id, "monthly_bot", health_amount)
 
         message = ""
         if overhealth:
@@ -223,7 +223,7 @@ class Client(commands.Bot):
 
         await update_horse_data(user_id, server_id, "clean", clean_total)                
         if horse_data[8] < 10:
-            await update_user_points(user_id, server_id, "bot", clean_amount)
+            await update_user_points(user_id, server_id, "monthly_bot", clean_amount)
 
         message = ""
         match clean_amount:
@@ -234,6 +234,8 @@ class Client(commands.Bot):
             case 3:
                 message = f'While {horse_data[3]} struggles to stand still for the braiding, you eventually finish putting {PRONOUNS_LOW[horse_data[4],2]} hair into the protective styles.'
             case 4:
+                message = f'You pick out {horse_data[3]}\'s hooves, cleaning out small rocks and dirt. {PRONOUNS_CAP[horse_data[4],0]} feels steady and comfortable on {PRONOUNS_LOW[horse_data[4],2]} hooves.'
+            case 5:
                 message = f'You spend the afternoon bathing {horse_data[3]}. {PRONOUNS_CAP[horse_data[4],0]} now is sparkling and beautiful.'
 
         if clean_total == 10 and overclean == False:
@@ -1533,6 +1535,7 @@ async def checkPony(interaction: discord.Interaction):
     server_id = interaction.guild.id
     user_id = interaction.user.id
     horse_data = await gather_all_horse_data(user_id, server_id)
+    user_data = await gather_user_data(user_id, server_id)
 
     if horse_data:
         server_data = await get_server_data(server_id)
@@ -1544,15 +1547,17 @@ async def checkPony(interaction: discord.Interaction):
             stats_t = f'{horse_data[3]}\'s Care Stats'
             stats_v = await stat_string(horse_data)
 
-            points_t = f'{horse_data[3]}\'s Points'
+            points_t = f'{horse_data[3]} and Your Points'
             points_v = (
-                #f'**Money: ** ${horse_data[10]}' + f'\n' +
-                f'**Care Points: ** {horse_data[10]}'
+                #f'**Money: ** ${user_data[7]}' + f'\n' +
+                f'**Care Points: ** {user_data[11]}'
             )
-            if horse_data[11] > 0:
-                points_v += f'\n**Server Points: ** {horse_data[11]}'
+            if user_data[9] > 0:
+                points_v += f'\n**Competition Points: ** {user_data[9]}'
+            if user_data[8] > 0:
+                points_v += f'\n**Server Points: ** {user_data[8]}'
             if horse_data[12] > 0:
-                points_v += f'\n**HARPG Points: ** {horse_data[12]}'
+                points_v += f'\n**{horse_data[3]}\'s HARPG Points: ** {horse_data[12]}'
 
             skills_t = f'{horse_data[3]}\'s Discipline and Skills'
 
@@ -1589,6 +1594,7 @@ async def checkPony(interaction: discord.Interaction):
             pony_gender = f"**Gender:** {PRONOUNS_CAP[horse_data[4],3]}"
             message = pony_name + f'\n' + pony_gender
             footer = f"{horse_data[3]} is happy you stopped by!"
+            title = f'Checking in on {horse_data[3]}'
             image = ""
 
             if horse_data[8] == 10 and horse_data[7] == 10 and horse_data[6] == 10 and horse_data[5] == 10:
@@ -1602,7 +1608,7 @@ async def checkPony(interaction: discord.Interaction):
                 image = await fetch_image(horse_data, 2)
                     
 
-            embed = discord.Embed(title="Horse Information", description=message, color= BOT_COLOR)
+            embed = discord.Embed(title=title, description=message, color= BOT_COLOR)
             if not(image == ""):
                 embed.set_image(url=image) 
             embed.set_footer(text=footer)
@@ -1917,6 +1923,7 @@ class GroomingDropdown(discord.ui.Select):
             discord.SelectOption(label='1 pts - Light Brushing', emoji='🧽'),
             discord.SelectOption(label='2 pts - Thorough Groom', emoji='🧼'),
             discord.SelectOption(label='3 pts - Mane and Tail Braiding', emoji='🎀'),
+            discord.SelectOption(label='4 pts - Pick out Hooves', emoji='👢'),
             discord.SelectOption(label='5 pts - Full Body Bath', emoji='🛁'),
         ]
 
